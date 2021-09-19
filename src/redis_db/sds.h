@@ -58,6 +58,11 @@ sds sdsnew(const char *init);
 sds sdsempty(void);
 
 /*
+ * sdsdup: 复制一个sds
+ */
+sds sdsdup(const sds s);
+
+/*
  * sdsfree: 释放一个sdshdr
  */
 void sdsfree(sds s);
@@ -75,6 +80,8 @@ sds sdscat(sds s, const char* t);
  * 可能发生内存的释放和重分配，导致传入的sds失效
  */
 sds sdscatsds(sds s, const sds t);
+
+int sdscmp(const sds s1, const sds s2);
 
 /*
  * sdsclear: 将sds置空

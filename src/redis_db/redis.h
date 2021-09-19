@@ -37,6 +37,7 @@
 
 /* Protocol and I/O related defines */
 #define REDIS_REPLY_CHUNK_BYTES (16*1024)    /* 16k output buffer */
+#define REDIS_LONGSTR_SIZE 21                /* Bytes needed for long -> str */
 
 /* 字典负载参数，小于该值则缩小字典 */
 /* Hash table parameters */
@@ -85,7 +86,30 @@
 /*
  * ...
  */
+
+/* Anti-warning macro */
+#define REDIS_NOTUSED(V) ((void) V)
+
+/* Client classes for client limits, currently used only for
+ * the max-client-output-buffer limit implementation. */
+#define REDIS_CLIENT_LIMIT_CLASS_NORMAL 0
+#define REDIS_CLIENT_LIMIT_CLASS_SLAVE 1
+#define REDIS_CLIENT_LIMIT_CLASS_PUBSUB 2
 #define REDIS_CLIENT_LIMIT_NUM_CLASSES 3
+
+/* Units */
+#define UNIT_SECONDS 0
+#define UNIT_MILLISECONDS 1
+
+/* SHUTDOWN flags */
+#define REDIS_SHUTDOWN_SAVE 1
+#define REDIS_SHUTDOWN_NOSAVE 2
+
+/* AOF states */
+#define REDIS_AOF_OFF 0             /* AOF is off */
+#define REDIS_AOF_ON 1              /* AOF is on */
+#define REDIS_AOF_WAIT_REWRITE 2    /* AOF waits rewrite to start appending */
+
 
 /*
  * 有序集合结构体定义
@@ -241,13 +265,37 @@ struct evictionPoolEntry {
     sds key;                    /* Key name */
 };
 
+/*
+ * 通过复用来减少内存碎片，以及减少操作耗时的共享对象
+ */
+struct sharedObjectsStruct {
+    robj* ok;
+    robj* err;
+    robj* czero;
+    robj* cone;
+    robj* nullbulk;
+    robj* syntaxerr;
+    robj* sameobjecterr;
+    robj* nokeyerr;
+    robj* outofrangeerr;
+    robj* del;
+    robj* rpop;
+    robj* lpop;
+    robj* lpush;
+};
+
+/*
+ * Redis数据库结构体定义
+ */
 /* Redis database representation. There are multiple databases identified
  * by integers from 0 (the default database) up to the max configured
  * database. The database number is the 'id' field in the structure. */
 typedef struct redisDb {
 
+    // 数据库键空间
     dict* dict;       /* The keyspace for this DB */
 
+    // 过期字典
     dict* expires;    /* Timeout of keys with a timeout set */
 
     dict* blocking_keys;
@@ -439,15 +487,18 @@ struct redisCommand {
 
 struct clusterState;
 
-struct lua_State;
+/* struct lua_State; */
 
 struct redisServer {
+
+    /* 通用字段 */
     /* General */
 
     char* configfile;
 
     int hz;
 
+    // 一个数组，保存着服务器中的所有数据库
     redisDb* db;
 
     dict* commands;
@@ -537,6 +588,7 @@ struct redisServer {
     struct redisCommand* lpopCommand;
     struct redisCommand* rpopCommand;
 
+    /* 统计信息 */
     /* Fields used only for stats */
 
     time_t stat_starttime;
@@ -549,8 +601,10 @@ struct redisServer {
 
     long long stat_evictedkeys;
 
+    // 键命中次数
     long long stat_keyspace_hits;
 
+    // 键未命中次数
     long long stat_keyspace_misses;
 
     size_t stat_peak_memory;
@@ -597,6 +651,7 @@ struct redisServer {
 
     size_t client_max_querybuf_len;
 
+    // 服务器数据库总数目
     int dbnum;
 
     int daemonize;
@@ -624,6 +679,7 @@ struct redisServer {
 
     int aof_rewrite_scheduled;
 
+    // 负责进行AOF重写的子进程PID
     pid_t aof_child_pid;
 
     list* aof_rewrite_buf_blocks;
@@ -654,10 +710,12 @@ struct redisServer {
 
     /* RDB persistence */
 
+    // 距离上一次成功执行SAVE或者BGSAVE之后，服务器对数据库状态进行了多少次修改
     long long dirty;
 
     long long dirty_before_bgsave;
 
+    // 负责执行BGSAVE的子进程PID；未在执行BGSAVE时，设为-1
     pid_t rdb_child_pid;
 
     struct saveparam* saveparams;
@@ -728,6 +786,7 @@ struct redisServer {
 
     char* masterauth;
 
+    // 主服务器地址
     char* masterhost;
 
     int masterport;
@@ -857,7 +916,7 @@ struct redisServer {
 
     /* Scripting */
 
-    lua_State* lua;
+    /* lua_State* lua; */
 
     redisClient* lua_client;
 
@@ -897,6 +956,8 @@ struct redisServer {
 /*
  * Extern declarations
  */
+extern struct redisServer server;
+extern struct sharedObjectsStruct shared;
 extern dictType setDictType;
 extern dictType zsetDictType;
 extern dictType hashDictType;
@@ -939,6 +1000,9 @@ robj* createIntsetObject(void);
 robj* createHashObject(void);
 robj* createZsetObject(void);
 robj* createZsetZiplistObject(void);
+int checkType(redisClient* c, robj* o, int type);
+int getLongFromObjectOrReply(redisClient* c, robj* o, long* target, const char* msg);
+int getLongLongFromObjectOrReply(redisClient* c, robj* o, long long* target, const char* msg);
 int getLongLongFromObject(robj* o, long long* target);
 int getLongDoubleFromObject(robj* o, long double* target);
 char* strEncoding(int encoding);
@@ -1009,5 +1073,82 @@ void zzlPrev(unsigned char* zl, unsigned char** eptr, unsigned char** sptr);
 // zset
 unsigned int zsetLength(robj* zobj);
 void zsetConvert(robj* zobj, int encoding);
+
+/* db.c -- Keyspace access API */
+int removeExpire(redisDb* db, robj* key);
+void propagateExpire(redisDb* db, robj* key);
+int expireIfNeeded(redisDb* db, robj* key);
+long long getExpire(redisDb* db, robj* key);
+void setExpire(redisDb* db, robj* key, long long when);
+robj* lookupKey(redisDb* db, robj* key);
+robj* lookupKeyRead(redisDb* db, robj* key);
+robj* lookupKeyWrite(redisDb* db, robj* key);
+robj* lookupKeyReadOrReply(redisClient* c, robj* key, robj* reply);
+robj* lookupKeyWriteOrReply(redisClient* c, robj* key, robj* reply);
+void dbAdd(redisDb* db, robj* key, robj* val);
+void dbOverWrite(redisDb* db, robj* key, robj* val);
+void setKey(redisDb* db, robj* key, robj* val);
+int dbExists(redisDb* db, robj* key);
+robj* dbRandomKey(redisDb* db);
+int dbDelete(redisDb* db, robj* key);
+robj* dbUnshareStringValue(redisDb* db, robj* key, robj* o);
+long long emptyDb(void(callback)(void*));
+int selectDb(redisClient* c, int id);
+void signalModifiedKey(redisDb* db, robj* key);
+void signalFlushedDb(int dbid);
+
+/* networking.c -- Networking and Client related operations */
+redisClient* createClient(int fd);
+void freeClient(redisClient* c);
+void freeClientAsync(redisClient* c);
+void resetClient(redisClient* c);
+void sendReplyToClient(aeEventLoop* el, int fd, void* privdata, int mask);
+void addReply(redisClient* c, robj* obj);
+void* addDeferredMultiBulkLength(redisClient* c);
+void setDeferredMultiBulkLength(redisClient* c, void* node, long length);
+void addReplySds(redisClient* c, sds s);
+void addReplyError(redisClient* c, char* err);
+void addReplyStatus(redisClient* c, char* status);
+void addReplyDouble(redisClient* c, double d);
+void addReplyLongLong(redisClient* c, long long ll);
+void addReplyBulk(redisClient* c, robj* obj);
+void addReplyBulkCString(redisClient* c, char* s);
+void addReplyBulkCBuffer(redisClient* c, void* p, size_t len);
+void addReplyBulkLongLong(redisClient* c, long long ll);
+void addReplyMultiBulkLen(redisClient* c, long length);
+// ...
+void rewriteClientCommandVector(redisClient* c, int argc, ...);
+
+/* Core functions */
+struct redisCommand* lookupCommand(sds name);
+void call(redisClient* c, int flags);
+int prepareForShutdown(int flags);
+
+/* RDB persistence */
+#include "rdb.h"
+
+/* AOF persistence */
+void flushAppendOnlyFile(int force);
+void feedAppendOnlyFile(struct redisCommand* cmd, int dictid, robj** argv, int argc);
+void aofRemoveTempFile(pid_t childpid);
+int rewriteAppendOnlyFileBackground(void);
+int loadAppendOnlyFile(char* filename);
+void stopAppendOnly(void);
+void startAppendOnly(void);
+void backgroundRewriteDoneHandler(int exitcode, int bysignal);
+void aofRewriteBufferReset(void);
+unsigned long aofRewriteBufferSize(void);
+
+/* Utils */
+long long ustime(void);
+long long mstime(void);
+
+/* Commands prototypes */
+void setCommand(redisClient* c);
+void setnxCommand(redisClient* c);
+void setexCommand(redisClient* c);
+void psetexCommand(redisClient* c);
+void getCommand(redisClient* c);
+void delCommand(redisClient* c);
 
 #endif //TINYREDIS_REDIS_H

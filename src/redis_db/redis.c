@@ -6,6 +6,13 @@
 #include <sys/time.h>
 #include "redis.h"
 
+/* Global vars */
+struct redisServer server;
+struct redisCommand redisCommandTable[] = {
+    {"get", getCommand, 2, "r", 0, NULL, 1, 1, 1, 0, 0},
+    {"set", setCommand, -3, "wm", 0, NULL, 1, 1, 1, 0, 0}
+};
+
 /*
  * 返回微秒级别的UNIX时间戳
  */

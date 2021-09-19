@@ -641,6 +641,49 @@ int getLongLongFromObject(robj* o, long long* target) {
 }
 
 /*
+ * ...
+ */
+int getLongLongFromObjectOrReply(redisClient* c, robj* o, long long* target, const char* msg) {
+
+    long long value;
+
+    if (getLongLongFromObject(o, &value) != REDIS_OK) {
+        if (msg != NULL) {
+            addReplyError(c, (char*)msg);
+        } else {
+            addReplyError(c, "value is not an integer or out of range");
+        }
+        return REDIS_ERR;
+    }
+
+    *target = value;
+
+    return REDIS_OK;
+}
+
+/*
+ * ...
+ */
+int getLongFromObjectOrReply(redisClient* c, robj* o, long* target, const char* msg) {
+
+    long long value;
+
+    if (getLongLongFromObjectOrReply(c, o, &value, msg) != REDIS_OK) return REDIS_ERR;
+
+    if (value < LONG_MIN || value > LONG_MAX) {
+        if (msg != NULL) {
+            addReplyError(c, (char*)msg);
+        } else {
+            addReplyError(c, "value is out of range");
+        }
+        return REDIS_ERR;
+    }
+
+    *target = value;
+    return REDIS_OK;
+}
+
+/*
  * 返回编码对应的字符串表示
  */
 char* strEncoding(int encoding) {

@@ -223,6 +223,7 @@ int dictExpand(dict* d, unsigned long size);
 int dictAdd(dict* d, void* key, void* val);
 dictEntry* dictAddRaw(dict* d, void* key);
 int dictReplace(dict* d, void* key, void* val);
+dictEntry* dictReplaceRaw(dict* d, void* key);
 int dictDelete(dict* d, const void* key);
 void dictRelease(dict* d);
 dictEntry* dictFind(dict* d, const void* key);
@@ -236,9 +237,11 @@ void dictReleaseIterator(dictIterator* iter);
 
 dictEntry* dictGetRandomKey(dict* d);
 unsigned int dictGenHashFunction(const void* key, int len);
+void dictEmpty(dict* d, void(callback)(void*));
 void dictEnableResize(void);
 void dictDisableResize(void);
 int dictRehash(dict* d, int n);
 int dictRehashMilliseconds(dict* d, int ms);
+unsigned long dictScan(dict* d, unsigned long v, dictScanFunction* fn, void* privdata);
 
 #endif //TINY_REDIS_DICT_H

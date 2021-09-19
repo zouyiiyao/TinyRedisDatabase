@@ -388,6 +388,16 @@ int dictReplace(dict* d, void* key, void* val) {
 }
 
 /*
+ * ...
+ */
+dictEntry* dictReplaceRaw(dict* d, void* key) {
+
+    dictEntry* entry = dictFind(d, key);
+
+    return entry ? entry : dictAddRaw(d, key);
+}
+
+/*
  * 查找并删除包含给定键的节点，如果字典正在进行rehash，查找删除操作会在0号和1号哈希表进行
  * 
  * nofree决定是否调用键和值的释放函数，0:调用 1:不调用
@@ -470,7 +480,7 @@ int _dictClear(dict* d, dictht* ht, void(callback)(void*)) {
         dictEntry* he;
         dictEntry* nextHe;
 
-        // 回调函数，目前没有用到
+        // 回调函数
         if (callback && (i & 65535) == 0) callback(d->privdata);
 
         // 跳过空索引
@@ -1058,6 +1068,18 @@ static int _dictKeyIndex(dict* d, const void* key) {
     }
 
     return idx;
+}
+
+/*
+ * 清空字典上的所有哈希表节点，并重置字典属性
+ */
+void dictEmpty(dict* d, void(callback)(void*)) {
+
+    _dictClear(d, &d->ht[0], callback);
+    _dictClear(d, &d->ht[1], callback);
+
+    d->rehashidx = -1;
+    d->iterators = 0;
 }
 
 /*
