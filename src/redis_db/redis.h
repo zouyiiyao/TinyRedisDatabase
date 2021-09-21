@@ -34,6 +34,7 @@
 #define REDIS_RUN_ID_SIZE 40
 #define REDIS_OPS_SEC_SAMPLES 16
 #define REDIS_BINDADDR_MAX 16
+#define REDIS_SHARED_INTEGERS 10000
 
 /* Protocol and I/O related defines */
 #define REDIS_REPLY_CHUNK_BYTES (16*1024)    /* 16k output buffer */
@@ -269,19 +270,25 @@ struct evictionPoolEntry {
  * 通过复用来减少内存碎片，以及减少操作耗时的共享对象
  */
 struct sharedObjectsStruct {
+    robj* crlf;
     robj* ok;
     robj* err;
     robj* czero;
     robj* cone;
+    robj* colon;
+    robj* cnegone;
     robj* nullbulk;
+    robj* emptymultibulk;
     robj* syntaxerr;
     robj* sameobjecterr;
     robj* nokeyerr;
     robj* outofrangeerr;
+    robj* wrongtypeerr;
     robj* del;
     robj* rpop;
     robj* lpop;
     robj* lpush;
+    robj* integers[REDIS_SHARED_INTEGERS];
 };
 
 /*
@@ -1003,6 +1010,8 @@ robj* createZsetZiplistObject(void);
 int checkType(redisClient* c, robj* o, int type);
 int getLongFromObjectOrReply(redisClient* c, robj* o, long* target, const char* msg);
 int getLongLongFromObjectOrReply(redisClient* c, robj* o, long long* target, const char* msg);
+int getDoubleFromObjectOrReply(redisClient* c, robj* o, double* target, const char* msg);
+int getLongDoubleFromObjectOrReply(redisClient* c, robj* o, long double* target, const char* msg);
 int getLongLongFromObject(robj* o, long long* target);
 int getLongDoubleFromObject(robj* o, long double* target);
 char* strEncoding(int encoding);
@@ -1010,7 +1019,7 @@ int compareStringObjects(robj* a, robj* b);
 int collateStringObjects(robj* a, robj* b);
 int equalStringObjects(robj* a, robj* b);
 unsigned long long estimateObjectIdleTime(robj* o);
-#define sdsEncodesObject(objptr) (objptr->encoding == REDIS_ENCODING_RAW || objptr->encoding == REDIS_ENCODING_EMBSTR)
+#define sdsEncodedObject(objptr) (objptr->encoding == REDIS_ENCODING_RAW || objptr->encoding == REDIS_ENCODING_EMBSTR)
 
 /* List data type */
 void listTypeTryConversion(robj* subject, robj* value);
@@ -1065,6 +1074,9 @@ zskiplistNode* zslFirstInRange(zskiplist* zsl, zrangespec* range);
 zskiplistNode* zslLastInRange(zskiplist* zsl, zrangespec* range);
 unsigned long zslGetRank(zskiplist* zsl, double score, robj* o);
 zskiplistNode* zslGetElementByRank(zskiplist* zsl, unsigned long rank);
+int zslValueGteMin(double value, zrangespec* spec);
+int zslValueLteMax(double value, zrangespec* spec);
+int zslParseRange(robj* min, robj* max, zrangespec* spec);
 // encoding is ziplist
 unsigned char* zzlInsert(unsigned char* zl, robj* ele, double score);
 double zzlGetScore(unsigned char* sptr);
@@ -1118,6 +1130,7 @@ void addReplyBulkLongLong(redisClient* c, long long ll);
 void addReplyMultiBulkLen(redisClient* c, long length);
 // ...
 void rewriteClientCommandVector(redisClient* c, int argc, ...);
+void rewriteClientCommandArgument(redisClient* c, int i, robj* newval);
 
 /* Core functions */
 struct redisCommand* lookupCommand(sds name);
@@ -1144,11 +1157,76 @@ long long ustime(void);
 long long mstime(void);
 
 /* Commands prototypes */
+
+/* Db commands */
+void delCommand(redisClient* c);
+void existsCommand(redisClient* c);
+void selectCommand(redisClient* c);
+void randomkeyCommand(redisClient* c);
+void keysCommand(redisClient* c);
+void scanCommand(redisClient* c);
+void dbsizeCommand(redisClient* c);
+void lastsaveCommand(redisClient* c);
+void typeCommand(redisClient* c);
+void shutdownCommand(redisClient* c);
+void moveCommand(redisClient* c);
+void renameCommand(redisClient* c);
+void renamenxCommand(redisClient* c);
+
+/* String commands */
 void setCommand(redisClient* c);
 void setnxCommand(redisClient* c);
 void setexCommand(redisClient* c);
 void psetexCommand(redisClient* c);
 void getCommand(redisClient* c);
-void delCommand(redisClient* c);
+void appendCommand(redisClient* c);
+void incrCommand(redisClient* c);
+void decrCommand(redisClient* c);
+void incrbyCommand(redisClient* c);
+void decrbyCommand(redisClient* c);
+void incrbyfloatCommand(redisClient* c);
+
+/* List commands */
+void lpushxCommand(redisClient* c);
+void rpushxCommand(redisClient* c);
+void linsertCommand(redisClient* c);
+void lpopCommand(redisClient* c);
+void rpopCommand(redisClient* c);
+void llenCommand(redisClient* c);
+void lindexCommand(redisClient* c);
+void lremCommand(redisClient* c);
+void ltrimCommand(redisClient* c);
+void lsetCommand(redisClient* c);
+
+/* Hash commands */
+void hsetCommand(redisClient* c);
+void hsetnxCommand(redisClient* c);
+void hgetCommand(redisClient* c);
+void hexistsCommand(redisClient* c);
+void hdelCommand(redisClient* c);
+void hlenCommand(redisClient* c);
+void hgetallCommand(redisClient* c);
+
+/* Set commands */
+void saddCommand(redisClient* c);
+void sremCommand(redisClient* c);
+void scardCommand(redisClient* c);
+void sismemberCommand(redisClient* c);
+void sinterCommand(redisClient* c);
+void sunionCommand(redisClient* c);
+void sdiffCommand(redisClient* c);
+void srandmemberCommand(redisClient* c);
+void spopCommand(redisClient* c);
+
+/* Sorted set commands */
+void zaddCommand(redisClient* c);
+void zcardCommand(redisClient* c);
+void zcountCommand(redisClient* c);
+void zrangeCommand(redisClient* c);
+void zrevrangeCommand(redisClient* c);
+void zrankCommand(redisClient* c);
+void zrevrankCommand(redisClient* c);
+void zremCommand(redisClient* c);
+void zscoreCommand(redisClient* c);
 
 #endif //TINYREDIS_REDIS_H

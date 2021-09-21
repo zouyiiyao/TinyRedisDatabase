@@ -17,11 +17,18 @@ void hashTypeTryConversion(robj* o, robj** argv, int start, int end) {
     if (o->encoding != REDIS_ENCODING_ZIPLIST) return;
 
     for (i = start; i <= end; i++) {
-        if (sdsEncodesObject(argv[i]) && sdslen(argv[i]->ptr) > HASH_MAX_ZIPLIST_VALUE) {
+        if (sdsEncodedObject(argv[i]) && sdslen(argv[i]->ptr) > HASH_MAX_ZIPLIST_VALUE) {
             // 将哈希类型对象底层编码转化为REDIS_ENCODING_HT
             hashTypeConvert(o, REDIS_ENCODING_HT);
             break;
         }
+    }
+}
+
+void hashTypeTryObjectEncoding(robj* subject, robj** o1, robj** o2) {
+    if (subject->encoding == REDIS_ENCODING_HT) {
+        if (o1) *o1 = tryObjectEncoding(*o1);
+        if (o2) *o2 = tryObjectEncoding(*o2);
     }
 }
 
@@ -445,4 +452,240 @@ void hashTypeConvert(robj* o, int enc) {
     } else {
         exit(1);
     }
+}
+
+/*
+ * Hash Commands
+ */
+
+robj* hashTypeLookupWriteOrCreate(redisClient* c, robj* key) {
+
+    robj* o = lookupKeyWrite(c->db, key);
+
+    if (o == NULL) {
+        o = createHashObject();
+        dbAdd(c->db, key, o);
+    } else {
+        if (o->type != REDIS_HASH) {
+            addReply(c, shared.wrongtypeerr);
+            return NULL;
+        }
+    }
+
+    return o;
+}
+
+void hsetCommand(redisClient* c) {
+
+    int update;
+    robj* o;
+
+    if ((o = hashTypeLookupWriteOrCreate(c, c->argv[1])) == NULL) return;
+
+    hashTypeTryConversion(o, c->argv, 2, 3);
+
+    hashTypeTryObjectEncoding(o, &c->argv[2], &c->argv[3]);
+
+    update = hashTypeSet(o, c->argv[2], c->argv[3]);
+
+    addReply(c, update ? shared.czero : shared.cone);
+
+    /* signalModifiedKey(c->db, c->argv[1]); */
+
+    /* notifyKeyspaceEvent(REDIS_NOTIFY_HASH, "hset", c->argv[1], c->db->id); */
+
+    server.dirty++;
+}
+
+void hsetnxCommand(redisClient* c) {
+
+    robj* o;
+
+    if ((o = hashTypeLookupWriteOrCreate(c, c->argv[1])) == NULL) return;
+
+    hashTypeTryConversion(o, c->argv, 2, 3);
+
+    if (hashTypeExists(o, c->argv[2])) {
+        addReply(c, shared.czero);
+    } else {
+        hashTypeTryObjectEncoding(o, &c->argv[2], &c->argv[3]);
+
+        hashTypeSet(o, c->argv[2], c->argv[3]);
+
+        addReply(c, shared.cone);
+
+        /* signalModifiedKey(c->db, c->argv[1]); */
+
+        /* notifyKeyspaceEvent(REDIS_NOTIFY_HASH, "hset", c->argv[1], c->db->id); */
+
+        server.dirty++;
+    }
+}
+
+/*
+ * ...
+ */
+static void addHashFieldToReply(redisClient* c, robj* o, robj* field) {
+
+    int ret;
+
+    if (o == NULL) {
+        addReply(c, shared.nullbulk);
+        return;
+    }
+
+    if (o->encoding == REDIS_ENCODING_ZIPLIST) {
+        unsigned char* vstr = NULL;
+        unsigned int vlen = UINT_MAX;
+        long long vll = LLONG_MAX;
+
+        ret = hashTypeGetFromZiplist(o, field, &vstr, &vlen, &vll);
+        if (ret < 0) {
+            addReply(c, shared.nullbulk);
+        } else {
+            if (vstr) {
+                addReplyBulkCBuffer(c, vstr, vlen);
+            } else {
+                addReplyBulkLongLong(c, vll);
+            }
+        }
+
+    } else if (o->encoding == REDIS_ENCODING_HT) {
+        robj* value;
+
+        ret = hashTypeGetFromHashTable(o, field, &value);
+        if (ret < 0) {
+            addReply(c, shared.nullbulk);
+        } else {
+            addReplyBulk(c, value);
+        }
+
+    } else {
+        exit(1);
+    }
+}
+
+void hgetCommand(redisClient* c) {
+    robj* o;
+
+    if ((o = lookupKeyReadOrReply(c, c->argv[1], shared.nullbulk)) == NULL || checkType(c, o, REDIS_HASH))
+        return;
+
+    addHashFieldToReply(c, o, c->argv[2]);
+}
+
+void hexistsCommand(redisClient* c) {
+    robj* o;
+
+    if ((o = lookupKeyReadOrReply(c, c->argv[1], shared.czero)) == NULL || checkType(c, o, REDIS_HASH))
+        return;
+
+    addReply(c, hashTypeExists(o, c->argv[2]) ? shared.cone : shared.czero);
+}
+
+void hdelCommand(redisClient* c) {
+    robj* o;
+    int j;
+    int deleted = 0;
+    /* int keyremoved = 0; */
+
+    if ((o = lookupKeyWriteOrReply(c, c->argv[1], shared.czero)) == NULL || checkType(c, o, REDIS_HASH))
+        return;
+
+    for (j = 2; j < c->argc; j++) {
+        if (hashTypeDelete(o, c->argv[j])) {
+
+            deleted++;
+
+            if (hashTypeLength(o) == 0) {
+                dbDelete(c->db, c->argv[1]);
+                /* keyremoved = 1; */
+                break;
+            }
+        }
+    }
+
+    if (deleted) {
+
+        /* signalModifiedKey(c->db, c->argv[1]); */
+
+        /* notifyKeyspaceEvent(REDIS_NOTIFY_HASH, "hdel", c->argv[1], c->db->id); */
+
+        /* if (keyremoved)
+         *     notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id);
+         */
+
+        server.dirty += deleted;
+    }
+
+    addReplyLongLong(c, deleted);
+}
+
+void hlenCommand(redisClient* c) {
+    robj* o;
+
+    if ((o = lookupKeyReadOrReply(c, c->argv[1], shared.czero)) == NULL || checkType(c, o, REDIS_HASH))
+        return;
+
+    addReplyLongLong(c, hashTypeLength(o));
+}
+
+static void addHashIteratorCursorToReply(redisClient* c, hashTypeIterator* hi, int what) {
+
+    if (hi->encoding == REDIS_ENCODING_ZIPLIST) {
+        unsigned char* vstr = NULL;
+        unsigned int vlen = UINT_MAX;
+        long long vll = LLONG_MAX;
+
+        hashTypeCurrentFromZiplist(hi, what, &vstr, &vlen, &vll);
+        if (vstr) {
+            addReplyBulkCBuffer(c, vstr, vlen);
+        } else {
+            addReplyBulkLongLong(c, vll);
+        }
+    } else if (hi->encoding == REDIS_ENCODING_HT) {
+        robj* value;
+
+        hashTypeCurrentFromHashTable(hi, what, &value);
+        addReplyBulk(c, value);
+    } else {
+        exit(1);
+    }
+}
+
+void genericHgetallCommand(redisClient* c, int flags) {
+    robj* o;
+    hashTypeIterator* hi;
+    int multiplier = 0;
+    int length, count = 0;
+
+    if ((o = lookupKeyReadOrReply(c, c->argv[1], shared.emptymultibulk)) == NULL || checkType(c, o, REDIS_HASH))
+        return;
+
+    if (flags & REDIS_HASH_KEY) multiplier++;
+    if (flags & REDIS_HASH_VALUE) multiplier++;
+
+    length = hashTypeLength(o) * multiplier;
+
+    addReplyMultiBulkLen(c, length);
+
+    // ... unsafe
+    hi = hashTypeInitIterator(o);
+    while (hashTypeNext(hi) != REDIS_ERR) {
+        if (flags & REDIS_HASH_KEY) {
+            addHashIteratorCursorToReply(c, hi, REDIS_HASH_KEY);
+            count++;
+        }
+        if (flags & REDIS_HASH_VALUE) {
+            addHashIteratorCursorToReply(c, hi, REDIS_HASH_VALUE);
+            count++;
+        }
+    }
+
+    hashTypeReleaseIterator(hi);
+    assert(count == length);
+}
+
+void hgetallCommand(redisClient* c) {
+    genericHgetallCommand(c, REDIS_HASH_KEY | REDIS_HASH_VALUE);
 }

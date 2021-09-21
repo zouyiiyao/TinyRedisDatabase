@@ -15,7 +15,7 @@ void listTypeTryConversion(robj* subject, robj* value) {
 
     if (subject->encoding != REDIS_ENCODING_ZIPLIST) return;
 
-    if (sdsEncodesObject(value) && sdslen(value->ptr) > LIST_MAX_ZIPLIST_VALUE)
+    if (sdsEncodedObject(value) && sdslen(value->ptr) > LIST_MAX_ZIPLIST_VALUE)
         listTypeConvert(subject, REDIS_ENCODING_LINKEDLIST);
 }
 
@@ -261,7 +261,7 @@ int listTypeEqual(listTypeEntry* entry, robj* o) {
     listTypeIterator* li = entry->li;
 
     if (li->encoding == REDIS_ENCODING_ZIPLIST) {
-        assert(sdsEncodesObject(o));
+        assert(sdsEncodedObject(o));
         return ziplistCompare(entry->zi, o->ptr, sdslen(o->ptr));
     } else if (li->encoding == REDIS_ENCODING_LINKEDLIST) {
         return equalStringObjects(o, listNodeValue(entry->ln));
@@ -327,6 +327,369 @@ void listTypeConvert(robj* subject, int enc) {
         zfree(subject->ptr);
 
         subject->ptr = l;
+    } else {
+        exit(1);
+    }
+}
+
+/*
+ * List Commands
+ */
+
+void pushxGenericCommand(redisClient* c, robj* refval, robj* val, int where) {
+
+    robj* subject;
+    listTypeIterator* iter;
+    listTypeEntry entry;
+    int inserted = 0;
+
+    if ((subject = lookupKeyReadOrReply(c, c->argv[1], shared.czero)) == NULL || checkType(c, subject, REDIS_LIST))
+        return;
+
+    // LINSERT
+    if (refval != NULL) {
+        /* We're not sure if this value can be inserted yet, but we cannot
+         * convert the list inside the iterator. We don't want to loop over
+         * the list twice (once to see if the value can be inserted and once
+         * to do the actual insert), so we assume this value can be inserted
+         * and convert the ziplist to a regular list if necessary. */
+        listTypeTryConversion(subject, val);
+
+        /* Seek refval from head to tail */
+        iter = listTypeInitIterator(subject, 0, REDIS_TAIL);
+        while (listTypeNext(iter, &entry)) {
+            if (listTypeEqual(&entry, refval)) {
+                listTypeInsert(&entry, val, where);
+                inserted = 1;
+                break;
+            }
+        }
+        listTypeReleaseIterator(iter);
+
+        if (inserted) {
+            /* Check if the length exceeds the ziplist length threshold. */
+            if (subject->encoding == REDIS_ENCODING_ZIPLIST &&
+                ziplistLen(subject->ptr) > server.list_max_ziplist_entries)
+                listTypeConvert(subject, REDIS_ENCODING_LINKEDLIST);
+
+            /* signalModifiedKey(c->db, c->argv[1]); */
+
+            /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "linsert", c->argv[1], c->db->id); */
+
+            server.dirty++;
+        } else {
+            /* Notify client of a failed insert */
+            addReply(c, shared.cnegone);
+            return;
+        }
+
+    // LPUSHX or RPUSHX
+    } else {
+        /* char* event = (where == REDIS_HEAD) ? "lpush" : "rpush"; */
+
+        listTypePush(subject, val, where);
+
+        /* signalModifiedKey(c->db, c->argv[1]); */
+
+        /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, event, c->argv[1], c->db->id); */
+
+        server.dirty++;
+    }
+
+    addReplyLongLong(c, listTypeLength(subject));
+}
+
+void lpushxCommand(redisClient* c) {
+    c->argv[2] = tryObjectEncoding(c->argv[2]);
+    pushxGenericCommand(c, NULL, c->argv[2], REDIS_HEAD);
+}
+
+void rpushxCommand(redisClient* c) {
+    c->argv[2] = tryObjectEncoding(c->argv[2]);
+    pushxGenericCommand(c, NULL, c->argv[2], REDIS_TAIL);
+}
+
+void linsertCommand(redisClient* c) {
+
+    c->argv[4] = tryObjectEncoding(c->argv[4]);
+
+    if (strcasecmp(c->argv[2]->ptr, "after") == 0) {
+        pushxGenericCommand(c, c->argv[3], c->argv[4], REDIS_TAIL);
+
+    } else if (strcasecmp(c->argv[2]->ptr, "before") == 0) {
+        pushxGenericCommand(c, c->argv[3], c->argv[4], REDIS_HEAD);
+
+    } else {
+        addReply(c, shared.syntaxerr);
+    }
+}
+
+void popGenericCommand(redisClient* c, int where) {
+
+    robj* o = lookupKeyWriteOrReply(c, c->argv[1], shared.nullbulk);
+
+    if (o == NULL || checkType(c, o, REDIS_LIST)) return;
+
+    robj* value = listTypePop(o, where);
+
+    if (value == NULL) {
+        addReply(c, shared.nullbulk);
+    } else {
+        /* char* event = (where == REDIS_HEAD) ? "lpop" : "rpop"; */
+
+        addReplyBulk(c, value);
+        decrRefCount(value);
+
+        /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, event, c->argv[1], c->db->id); */
+
+        if (listTypeLength(o) == 0) {
+            /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id); */
+            dbDelete(c->db, c->argv[1]);
+        }
+
+        /* signalModifiedKey(c->db, c->argv[1]); */
+        server.dirty++;
+    }
+}
+
+void lpopCommand(redisClient* c) {
+    popGenericCommand(c, REDIS_HEAD);
+}
+
+void rpopCommand(redisClient* c) {
+    popGenericCommand(c, REDIS_TAIL);
+}
+
+void llenCommand(redisClient* c) {
+
+    robj* o = lookupKeyReadOrReply(c, c->argv[1], shared.czero);
+
+    if (o == NULL || checkType(c, o, REDIS_LIST)) return;
+
+    addReplyLongLong(c, listTypeLength(o));
+}
+
+void lindexCommand(redisClient* c) {
+
+    robj* o = lookupKeyReadOrReply(c, c->argv[1], shared.nullbulk);
+
+    if (o == NULL || checkType(c, o, REDIS_LIST)) return;
+    long index;
+    robj* value = NULL;
+
+    if (getLongFromObjectOrReply(c, c->argv[2], &index, NULL) != REDIS_OK)
+        return;
+
+    if (o->encoding == REDIS_ENCODING_ZIPLIST) {
+        unsigned char* p;
+        unsigned char* vstr;
+        unsigned int vlen;
+        long long vlong;
+
+        p = ziplistIndex(o->ptr, index);
+
+        if (ziplistGet(p, &vstr, &vlen, &vlong)) {
+            if (vstr) {
+                value = createStringObject((char*)vstr, vlen);
+            } else {
+                value = createStringObjectFromLongLong(vlong);
+            }
+            addReplyBulk(c, value);
+            decrRefCount(value);
+        } else {
+            addReply(c, shared.nullbulk);
+        }
+
+    } else if (o->encoding == REDIS_ENCODING_LINKEDLIST) {
+
+        listNode* ln = listIndex(o->ptr, index);
+
+        if (ln != NULL) {
+            value = listNodeValue(ln);
+            addReplyBulk(c, value);
+        } else {
+            addReply(c, shared.nullbulk);
+        }
+    } else {
+        exit(1);
+    }
+}
+
+void lremCommand(redisClient* c) {
+
+    robj* subject;
+    robj* obj;
+
+    obj = c->argv[3] = tryObjectEncoding(c->argv[3]);
+    long toremove;
+    long removed = 0;
+    listTypeEntry entry;
+
+    if (getLongFromObjectOrReply(c, c->argv[2], &toremove, NULL) != REDIS_OK)
+        return;
+
+    subject = lookupKeyWriteOrReply(c, c->argv[1], shared.czero);
+    if (subject == NULL || checkType(c, subject, REDIS_LIST)) return;
+
+    /* Make sure obj is raw when we're dealing with a ziplist */
+    if (subject->encoding == REDIS_ENCODING_ZIPLIST)
+        obj = getDecodedObject(obj);
+
+    listTypeIterator* li;
+
+    if (toremove < 0) {
+        toremove = -toremove;
+        li = listTypeInitIterator(subject, -1, REDIS_HEAD);
+    } else {
+        li = listTypeInitIterator(subject, 0, REDIS_TAIL);
+    }
+
+    while (listTypeNext(li, &entry)) {
+        if (listTypeEqual(&entry, obj)) {
+            listTypeDelete(&entry);
+            server.dirty++;
+            removed++;
+            if (toremove && removed == toremove) break;
+        }
+    }
+    listTypeReleaseIterator(li);
+
+    /* Clean up raw encoded object */
+    if (subject->encoding == REDIS_ENCODING_ZIPLIST)
+        decrRefCount(obj);
+
+    if (listTypeLength(subject) == 0) dbDelete(c->db, c->argv[1]);
+
+    addReplyLongLong(c, removed);
+
+    /* if (removed) signalModifiedKey(c->db, c->argv[1]); */
+}
+
+void ltrimCommand(redisClient* c) {
+
+    robj* o;
+    long start;
+    long end;
+    long llen;
+    long j;
+    long ltrim;
+    long rtrim;
+    list* list;
+    listNode* ln;
+
+    if ((getLongFromObjectOrReply(c, c->argv[2], &start, NULL) != REDIS_OK) ||
+        (getLongFromObjectOrReply(c, c->argv[3], &end, NULL) != REDIS_OK))
+        return;
+
+    if ((o = lookupKeyWriteOrReply(c, c->argv[1], shared.ok)) == NULL || checkType(c, o, REDIS_LIST))
+        return;
+
+    llen = listTypeLength(o);
+
+    if (start < 0) start = llen + start;
+    if (end < 0) end = llen + end;
+    if (start < 0) start = 0;
+
+    /* Invariant: start >= 0, so this test will be true when end < 0.
+     * The range is empty when start > end or start >= length. */
+    if (start > end || start >= llen) {
+        /* Out of range start or start > end result in empty list */
+        ltrim = llen;
+        rtrim = 0;
+    } else {
+        if (end >= llen) end = llen - 1;
+        ltrim = start;
+        rtrim = llen - end - 1;
+    }
+
+    /* Remove list elements to perform the trim */
+    if (o->encoding == REDIS_ENCODING_ZIPLIST) {
+
+        o->ptr = ziplistDeleteRange(o->ptr, 0, ltrim);
+        o->ptr = ziplistDeleteRange(o->ptr, -rtrim, rtrim);
+    } else if (o->encoding == REDIS_ENCODING_LINKEDLIST) {
+        list = o->ptr;
+        for (j = 0; j < ltrim; j++) {
+            ln = listFirst(list);
+            listDelNode(list, ln);
+        }
+
+        for (j = 0; j < rtrim; j++) {
+            ln = listLast(list);
+            listDelNode(list, ln);
+        }
+    } else {
+        exit(1);
+    }
+
+    /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "ltrim", c->argv[1], c->db->id); */
+
+    if (listTypeLength(o) == 0) {
+        dbDelete(c->db, c->argv[1]);
+        /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id); */
+    }
+
+    /* signalModifiedKey(c->db, c->argv[1]); */
+
+    server.dirty++;
+
+    addReply(c, shared.ok);
+}
+
+void lsetCommand(redisClient* c) {
+
+    robj* o = lookupKeyWriteOrReply(c, c->argv[1], shared.nokeyerr);
+
+    if (o == NULL || checkType(c, o, REDIS_LIST)) return;
+    long index;
+
+    robj* value = (c->argv[3] = tryObjectEncoding(c->argv[3]));
+
+    if (getLongFromObjectOrReply(c, c->argv[2], &index, NULL) != REDIS_OK)
+        return;
+
+    listTypeTryConversion(o, value);
+
+    if (o->encoding == REDIS_ENCODING_ZIPLIST) {
+
+        unsigned char* p;
+        unsigned char* zl = o->ptr;
+
+        p = ziplistIndex(zl, index);
+        if (p == NULL) {
+            addReply(c, shared.outofrangeerr);
+        } else {
+            o->ptr = ziplistDelete(o->ptr, &p);
+            value = getDecodedObject(value);
+            o->ptr = ziplistInsert(o->ptr, p, value->ptr, sdslen(value->ptr));
+            decrRefCount(value);
+
+            addReply(c, shared.ok);
+
+            /* signalModifiedKey(c->db, c->argv[1]); */
+            /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "lset", c->argv[1], c->db->id); */
+
+            server.dirty++;
+        }
+
+    } else if (o->encoding == REDIS_ENCODING_LINKEDLIST) {
+
+        listNode* ln = listIndex(o->ptr, index);
+
+        if (ln == NULL) {
+            addReply(c, shared.outofrangeerr);
+        } else {
+            decrRefCount((robj*)listNodeValue(ln));
+            listNodeValue(ln) = value;
+            incrRefCount(value);
+
+            addReply(c, shared.ok);
+
+            /* signalModifiedKey(c->db, c->argv[1]); */
+            /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "lset", c->argv[1], c->db->id); */
+
+            server.dirty++;
+        }
     } else {
         exit(1);
     }

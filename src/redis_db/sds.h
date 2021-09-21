@@ -67,6 +67,8 @@ sds sdsdup(const sds s);
  */
 void sdsfree(sds s);
 
+sds sdscatlen(sds s, const void* t, size_t len);
+
 /*
  * sdscat: 将一个C语言字符串拼接到原来的sds后，返回新的sds
  * 可能发生内存的释放和重分配，导致传入的sds失效
@@ -90,5 +92,8 @@ int sdscmp(const sds s1, const sds s2);
 void sdsclear(sds s);
 
 sds sdsfromlonglong(long long value);
+
+/* Low level functions exposed to the user API */
+sds sdsRemoveFreeSpace(sds s);
 
 #endif //TINY_REDIS_SDS_H

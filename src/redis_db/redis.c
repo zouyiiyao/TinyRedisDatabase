@@ -88,7 +88,7 @@ int dictEncObjKeyCompare(void* privdata, const void* key1, const void* key2) {
 unsigned int dictEncObjHash(const void* key) {
     robj* o = (robj*)key;
 
-    if (sdsEncodesObject(o)) {
+    if (sdsEncodedObject(o)) {
         return dictGenHashFunction(o->ptr, sdslen((sds)o->ptr));
     } else {
         if (o->encoding == REDIS_ENCODING_INT) {

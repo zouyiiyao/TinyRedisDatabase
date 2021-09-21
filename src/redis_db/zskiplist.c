@@ -269,14 +269,14 @@ int zslDelete(zskiplist* zsl, double score, robj* obj) {
 /*
  * 检查value是否大于范围内的最小值
  */
-static int zslValueGteMin(double value, zrangespec* spec) {
+int zslValueGteMin(double value, zrangespec* spec) {
     return spec->minex ? (value > spec->min) : (value >= spec->min);
 }
 
 /*
  * 检查value是否小于范围内的最大值
  */
-static int zslValueLteMax(double value, zrangespec* spec) {
+int zslValueLteMax(double value, zrangespec* spec) {
     return spec->maxex ? (value < spec->max) : (value <= spec->max);
 }
 
@@ -482,4 +482,38 @@ zskiplistNode* zslGetElementByRank(zskiplist* zsl, unsigned long rank) {
     }
 
     return NULL;
+}
+
+int zslParseRange(robj* min, robj* max, zrangespec* spec) {
+    char* eptr;
+
+    spec->minex = spec->maxex = 0;
+
+    if (min->encoding == REDIS_ENCODING_INT) {
+        spec->min = (long)min->ptr;
+    } else {
+        if (((char*)min->ptr)[0] == '(') {
+            spec->min = strtod((char*)min->ptr + 1, &eptr);
+            if (eptr[0] != '\0' || isnan(spec->min)) return REDIS_ERR;
+            spec->minex = 1;
+        } else {
+            spec->min = strtod((char*)min->ptr, &eptr);
+            if (eptr[0] != '\0' || isnan(spec->min)) return REDIS_ERR;
+        }
+    }
+
+    if (max->encoding == REDIS_ENCODING_INT) {
+        spec->max = (long)max->ptr;
+    } else {
+        if (((char*)max->ptr)[0] == '(') {
+            spec->max = strtod((char*)max->ptr + 1, &eptr);
+            if (eptr[0] != '\0' || isnan(spec->max)) return REDIS_ERR;
+            spec->maxex = 1;
+        } else {
+            spec->max = strtod((char*)max->ptr, &eptr);
+            if (etpr[0] != '\0' || isnan(spec->max)) return REDIS_ERR;
+        }
+    }
+
+    return REDIS_OK;
 }

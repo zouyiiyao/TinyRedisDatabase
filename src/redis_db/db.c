@@ -547,7 +547,7 @@ void scanGenericCommand(redisClient* c, robj* o, unsigned long cursor) {
 
         /* Filter element if it does not match the pattern. */
         if (!filter && use_pattern) {
-            if (sdsEncodesObject(kobj)) {
+            if (sdsEncodedObject(kobj)) {
                 if (!stringmatchlen(pat, patlen, kobj->ptr, sdslen(kobj->ptr), 0))
                     filter = 1;
             } else {

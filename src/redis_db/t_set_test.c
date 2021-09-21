@@ -11,7 +11,7 @@ void printSet(robj* set) {
     int enc;
     while ((enc = setTypeNext(si, &objele, &llele)) != -1) {
         if (enc == REDIS_ENCODING_HT) {
-            if (sdsEncodesObject(objele)) {
+            if (sdsEncodedObject(objele)) {
                 printf("%s ", (sds)objele->ptr);
             } else {
                 printf("%ld ", (long)objele->ptr);

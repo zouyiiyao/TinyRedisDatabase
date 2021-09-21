@@ -226,6 +226,22 @@ int string2ll(const char *s, size_t slen, long long *value) {
     return 1;
 }
 
+/* Convert a string into a long. Returns 1 if the string could be parsed into a
+ * (non-overflowing) long, 0 otherwise. The value will be set to the parsed
+ * value when appropriate. */
+int string2l(const char *s, size_t slen, long *lval) {
+    long long llval;
+
+    if (!string2ll(s,slen,&llval))
+        return 0;
+
+    if (llval < LONG_MIN || llval > LONG_MAX)
+        return 0;
+
+    *lval = (long)llval;
+    return 1;
+}
+
 /* Convert a double to a string representation. Returns the number of bytes
  * required. The representation should always be parsable by stdtod(3). */
 int d2string(char *buf, size_t len, double value) {

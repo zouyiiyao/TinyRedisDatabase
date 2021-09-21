@@ -90,12 +90,11 @@ robj* createStringObjectFromLongLong(long long value) {
 
     robj* o;
 
-    // 初始化时定义的共享对象，暂时不使用
-    /*
+    // 初始化时定义的共享对象
     if (value >= 0 && value <= REDIS_SHARED_INTEGERS) {
         incrRefCount(shared.integers[value]);
         o = shared.integers[value];
-    } else */ {
+    } else {
         if (value >= LONG_MIN && value <= LONG_MAX) {
             o = createObject(REDIS_STRING, NULL);
             o->encoding = REDIS_ENCODING_INT;
@@ -422,6 +421,19 @@ robj* resetRefCount(robj* obj) {
 }
 
 /*
+ * ...
+ */
+int checkType(redisClient* c, robj* o, int type) {
+
+    if (o->type != type) {
+        addReply(c, shared.wrongtypeerr);
+        return 1;
+    }
+
+    return 0;
+}
+
+/*
  * 检查对象o中的值是否能表示为long long，如果能表示的话将转换后的值存在*llval中
  */
 int isObjectRepresentableAsLongLong(robj* o, long long* llval) {
@@ -437,6 +449,84 @@ int isObjectRepresentableAsLongLong(robj* o, long long* llval) {
 }
 
 /*
+ * ...
+ */
+/* Try to encode a string object in order to save space */
+robj* tryObjectEncoding(robj* o) {
+
+    long value;
+
+    sds s = o->ptr;
+    size_t len;
+
+    /* Make sure this is a string object, the only type we encode
+     * in this function. Other types use encoded memory efficient
+     * representations but are handled by the commands implementing
+     * the type. */
+    assert(o->type == REDIS_STRING);
+
+    /* We try some specialized encoding only for objects that are
+     * RAW or EMBSTR encoded, in other words objects that are still
+     * in represented by an actually array of chars. */
+    if (!sdsEncodedObject(o)) return o;
+
+    /* It's not safe to encode shared objects: shared objects can be shared
+     * everywhere in the "object space" of Redis and may end in places where
+     * they are not handled. We handle them only as values in the keyspace. */
+    if (o->refcount > 1) return o;
+
+    /* Check if we can represent this string as a long integer.
+     * Note that we are sure that a string larger than 21 chars is not
+     * representable as a 32 nor 64 bit integer. */
+    len = sdslen(s);
+    if (len <= 21 && string2l(s, len, &value)) {
+        /* This object is encodable as a long. Try to use a shared object.
+         * Note that we avoid using shared integers when maxmemory is used
+         * because every object needs to have a private LRU field for the LRU
+         * algorithm to work well. */
+        if (server.maxmemory == 0 && value >= 0 && value < REDIS_SHARED_INTEGERS) {
+            decrRefCount(o);
+            incrRefCount(shared.integers[value]);
+            return shared.integers[value];
+        } else {
+            // REDIS_ENCODING_EMBSTR...
+            if (o->encoding == REDIS_ENCODING_RAW) sdsfree(o->ptr);
+            o->encoding = REDIS_ENCODING_INT;
+            o->ptr = (void*)value;
+            return o;
+        }
+    }
+
+    /* If the string is small and is still RAW encoded,
+     * try the EMBSTR encoding which is more efficient.
+     * In this representation the object and the SDS string are allocated
+     * in the same chunk of memory to save space and cache misses. */
+    if (len <= REDIS_ENCODING_EMBSTR_SIZE_LIMIT) {
+        robj* emb;
+
+        if (o->encoding == REDIS_ENCODING_EMBSTR) return o;
+        emb = createEmbeddedStringObject(s, sdslen(s));
+        decrRefCount(o);
+        return emb;
+    }
+
+    /* We can't encode the object...
+     *
+     * Do the last try, and at least optimize the SDS string inside
+     * the string object to require little space, in case there
+     * is more than 10% of free space at the end of the SDS string.
+     *
+     * We do that only for relatively large strings as this branch
+     * is only entered if the length of the string is greater than
+     * REDIS_ENCODING_EMBSTR_SIZE_LIMIT. */
+    if (o->encoding == REDIS_ENCODING_RAW && sdsavail(s) > len / 10) {
+        o->ptr = sdsRemoveFreeSpace(o->ptr);
+    }
+
+    return o;
+}
+
+/*
  * 获取对象o的REDIS_ENCODING_RAW编码或REDIS_ENCODING_EMBSTR编码版本对象
  * 如果对象本来就是REDIS_ENCODING_RAW编码或REDIS_ENCODING_EMBSTR编码，则引用计数加1，返回原对象；
  * 否则，创建一个新的REDIS_ENCODING_RAW编码或REDIS_ENCODING_EMBSTR编码的对象，返回新创建的对象
@@ -445,7 +535,7 @@ robj* getDecodedObject(robj* o) {
     robj* dec;
 
     // 字符串类型对象，是REDIS_ENCODING_RAW编码或REDIS_ENCODING_EMBSTR编码
-    if (sdsEncodesObject(o)) {
+    if (sdsEncodedObject(o)) {
         incrRefCount(o);
         return o;
     }
@@ -480,7 +570,7 @@ int compareStringObjectsWithFlags(robj* a, robj* b, int flags) {
     if (a == b) return 0;
 
     // 取出对象内容，需要的话转为字符串
-    if (sdsEncodesObject(a)) {
+    if (sdsEncodedObject(a)) {
         astr = a->ptr;
         alen = sdslen(astr);
     } else {
@@ -489,7 +579,7 @@ int compareStringObjectsWithFlags(robj* a, robj* b, int flags) {
     }
 
     // 取出对象内容，需要的话转为字符串
-    if (sdsEncodesObject(b)) {
+    if (sdsEncodedObject(b)) {
         bstr = b->ptr;
         blen = sdslen(bstr);
     } else {
@@ -543,7 +633,7 @@ size_t stringObjectLen(robj* o) {
 
     assert(o->type == REDIS_STRING);
 
-    if (sdsEncodesObject(o)) {
+    if (sdsEncodedObject(o)) {
         return sdslen(o->ptr);
     } else {
         char buf[32];
@@ -563,7 +653,7 @@ int getDoubleFromObject(robj* o, double* target) {
     } else {
         assert(o->type == REDIS_STRING);
 
-        if (sdsEncodesObject(o)) {
+        if (sdsEncodedObject(o)) {
             errno = 0;
             value = strtod(o->ptr, &eptr);
             if (isspace(((char*)o->ptr)[0]) || eptr[0] != '\0' ||
@@ -575,6 +665,23 @@ int getDoubleFromObject(robj* o, double* target) {
         } else {
             exit(1);
         }
+    }
+
+    *target = value;
+    return REDIS_OK;
+}
+
+int getDoubleFromObjectOrReply(redisClient* c, robj* o, double* target, const char* msg) {
+
+    double value;
+
+    if (getDoubleFromObject(o, &value) != REDIS_OK) {
+        if (msg != NULL) {
+            addReplyError(c, (char*)msg);
+        } else {
+            addReplyError(c, "value is not a valid float");
+        }
+        return REDIS_ERR;
     }
 
     *target = value;
@@ -593,7 +700,7 @@ int getLongDoubleFromObject(robj* o, long double* target) {
     } else {
         assert(o->type == REDIS_STRING);
 
-        if (sdsEncodesObject(o)) {
+        if (sdsEncodedObject(o)) {
             errno = 0;
             value = strtold(o->ptr, &eptr);
             if (isspace(((char*)o->ptr)[0]) || eptr[0] != '\0' ||
@@ -622,7 +729,7 @@ int getLongLongFromObject(robj* o, long long* target) {
     } else {
 
         assert(o->type == REDIS_STRING);
-        if (sdsEncodesObject(o)) {
+        if (sdsEncodedObject(o)) {
             errno = 0;
             value = strtoll(o->ptr, &eptr, 10);
             if (isspace(((char*)o->ptr)[0]) || eptr[0] != '\0' ||
@@ -675,6 +782,26 @@ int getLongFromObjectOrReply(redisClient* c, robj* o, long* target, const char* 
             addReplyError(c, (char*)msg);
         } else {
             addReplyError(c, "value is out of range");
+        }
+        return REDIS_ERR;
+    }
+
+    *target = value;
+    return REDIS_OK;
+}
+
+/*
+ * ...
+ */
+int getLongDoubleFromObjectOrReply(redisClient* c, robj* o, long double* target, const char* msg) {
+
+    long double value;
+
+    if (getLongDoubleFromObject(o, &value) != REDIS_OK) {
+        if (msg != NULL) {
+            addReplyError(c, (char*)msg);
+        } else {
+            addReplyError(c, "value is not a valid float");
         }
         return REDIS_ERR;
     }

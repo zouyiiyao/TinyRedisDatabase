@@ -118,6 +118,18 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
 }
 
 /*
+ * ...
+ */
+sds sdsRemoveFreeSpace(sds s) {
+    struct sdshdr* sh;
+
+    sh = (void*)(s - sizeof(struct sdshdr));
+    sh = zrealloc(sh, sizeof(struct sdshdr) + sh->len + 1);
+    sh->free = 0;
+    return sh->buf;
+}
+
+/*
  * sdscatlen: 字符串拼接
  */
 sds sdscatlen(sds s, const void* t, size_t len) {
