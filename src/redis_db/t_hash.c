@@ -475,6 +475,11 @@ robj* hashTypeLookupWriteOrCreate(redisClient* c, robj* key) {
     return o;
 }
 
+/*
+ * hset
+ *
+ * 如果哈希值对象不存在，则创建一个新的哈希值对象
+ */
 void hsetCommand(redisClient* c) {
 
     int update;
@@ -497,6 +502,9 @@ void hsetCommand(redisClient* c) {
     server.dirty++;
 }
 
+/*
+ * hsetnx
+ */
 void hsetnxCommand(redisClient* c) {
 
     robj* o;
@@ -523,7 +531,7 @@ void hsetnxCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * 辅助函数: 将哈希值对象中键field对应的值添加到回复中
  */
 static void addHashFieldToReply(redisClient* c, robj* o, robj* field) {
 
@@ -565,6 +573,9 @@ static void addHashFieldToReply(redisClient* c, robj* o, robj* field) {
     }
 }
 
+/*
+ * hget
+ */
 void hgetCommand(redisClient* c) {
     robj* o;
 
@@ -574,6 +585,9 @@ void hgetCommand(redisClient* c) {
     addHashFieldToReply(c, o, c->argv[2]);
 }
 
+/*
+ * hexists
+ */
 void hexistsCommand(redisClient* c) {
     robj* o;
 
@@ -583,6 +597,9 @@ void hexistsCommand(redisClient* c) {
     addReply(c, hashTypeExists(o, c->argv[2]) ? shared.cone : shared.czero);
 }
 
+/*
+ * hdel
+ */
 void hdelCommand(redisClient* c) {
     robj* o;
     int j;
@@ -621,6 +638,9 @@ void hdelCommand(redisClient* c) {
     addReplyLongLong(c, deleted);
 }
 
+/*
+ * hlen
+ */
 void hlenCommand(redisClient* c) {
     robj* o;
 
@@ -630,6 +650,9 @@ void hlenCommand(redisClient* c) {
     addReplyLongLong(c, hashTypeLength(o));
 }
 
+/*
+ * 从迭代器当前指向的节点中取出键或值添加到回复中
+ */
 static void addHashIteratorCursorToReply(redisClient* c, hashTypeIterator* hi, int what) {
 
     if (hi->encoding == REDIS_ENCODING_ZIPLIST) {
@@ -653,6 +676,9 @@ static void addHashIteratorCursorToReply(redisClient* c, hashTypeIterator* hi, i
     }
 }
 
+/*
+ * hgetall的底层实现
+ */
 void genericHgetallCommand(redisClient* c, int flags) {
     robj* o;
     hashTypeIterator* hi;
@@ -669,7 +695,7 @@ void genericHgetallCommand(redisClient* c, int flags) {
 
     addReplyMultiBulkLen(c, length);
 
-    // ... unsafe
+    // 若哈希值对象底层编码是REDIS_ENCODING_HT，则使用非安全迭代器
     hi = hashTypeInitIterator(o);
     while (hashTypeNext(hi) != REDIS_ERR) {
         if (flags & REDIS_HASH_KEY) {
@@ -686,6 +712,11 @@ void genericHgetallCommand(redisClient* c, int flags) {
     assert(count == length);
 }
 
+/*
+ * hgetall
+ * 
+ * 返回存储在key中的哈希值对象中所有键值对
+ */
 void hgetallCommand(redisClient* c) {
     genericHgetallCommand(c, REDIS_HASH_KEY | REDIS_HASH_VALUE);
 }
