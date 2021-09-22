@@ -247,6 +247,9 @@ void setTypeConvert(robj* setobj, int enc) {
  * Set Commands
  */
 
+/*
+ * sadd
+ */
 void saddCommand(redisClient* c) {
     robj* set;
     int j;
@@ -281,6 +284,9 @@ void saddCommand(redisClient* c) {
     addReplyLongLong(c, added);
 }
 
+/*
+ * srem
+ */
 void sremCommand(redisClient* c) {
     robj* set;
     int j;
@@ -317,6 +323,9 @@ void sremCommand(redisClient* c) {
     addReplyLongLong(c, deleted);
 }
 
+/*
+ * scard
+ */
 void scardCommand(redisClient* c) {
     robj* o;
 
@@ -326,6 +335,9 @@ void scardCommand(redisClient* c) {
     addReplyLongLong(c, setTypeSize(o));
 }
 
+/*
+ * sismember
+ */
 void sismemberCommand(redisClient* c) {
     robj* set;
 
@@ -356,6 +368,9 @@ int qsortCompareSetByRevCardinality(const void* s1, const void* s2) {
     return (o2 ? setTypeSize(o2) : 0) - (o1 ? setTypeSize(o1) : 0);
 }
 
+/*
+ * sinter，sinterstore底层实现
+ */
 void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, robj* dstkey) {
 
     robj** sets = zmalloc(sizeof(robj*) * setnum);
@@ -482,6 +497,7 @@ void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, 
     if (dstkey) {
         /* Store the resulting set into the target, if the intersection
          * is not an empty set. */
+        // 若dstkey已经存在，则从键空间中将其删除
         int deleted = dbDelete(c->db, dstkey);
 
         if (setTypeSize(dstset) > 0) {
@@ -509,6 +525,9 @@ void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, 
     zfree(sets);
 }
 
+/*
+ * sinter
+ */
 void sinterCommand(redisClient* c) {
     sinterGenericCommand(c, c->argv + 1, c->argc - 1, NULL);
 }
@@ -520,6 +539,9 @@ void sinterCommand(redisClient* c) {
 #define REDIS_OP_DIFF 1
 #define REDIS_OP_INTER 2
 
+/*
+ * sdiff，sdiffstore，sunion，sunionstore底层实现
+ */
 void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* dstkey, int op) {
 
     robj** sets = zmalloc(sizeof(robj*) * setnum);
@@ -704,18 +726,28 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
     zfree(sets);
 }
 
+/*
+ * sunion
+ */
 void sunionCommand(redisClient* c) {
     sunionDiffGenericCommand(c, c->argv + 1, c->argc - 1, NULL, REDIS_OP_UNION);
 }
 
+/*
+ * sdiff
+ */
 void sdiffCommand(redisClient* c) {
     sunionDiffGenericCommand(c, c->argv + 1, c->argc - 1, NULL, REDIS_OP_DIFF);
 }
 
+
+/*
+ * srandmember带count参数时的底层实现
+ */
 /* How many times bigger should be the set compared to the requested size
-* for us to don't use the "remove elements" strategy? Read later in the
-* implementation for more info.
-*/
+ * for us to don't use the "remove elements" strategy? Read later in the
+ * implementation for more info.
+ */
 #define SRANDMEMBER_SUB_STRATEGY_MUL 3
 
 void srandmemberWithCountCommand(redisClient* c) {
@@ -748,6 +780,7 @@ void srandmemberWithCountCommand(redisClient* c) {
         return;
     }
 
+    // count是负数，表示返回元素允许重复，则直接随机取count次，不需要去重
     /* CASE 1: The count was negative, so the extraction method is just:
      * "return N random elements" sampling the whole set every time.
      * This case is trivial and can be served without auxiliary data
@@ -768,6 +801,7 @@ void srandmemberWithCountCommand(redisClient* c) {
         return;
     }
 
+    // count是正数，返回元素不允许重复，而且所需元素大于整个集合大小，返回整个集合
     /* CASE 2:
      * The number of requested elements is greater than the number of
      * elements inside the set: simply return the whole set.
@@ -780,6 +814,7 @@ void srandmemberWithCountCommand(redisClient* c) {
     /* For CASE 3 and CASE 4 we need an auxiliary dictionary. */
     d = dictCreate(&setDictType, NULL);
 
+    // 所需元素与整个集合大小接近，先把集合加入到一个辅助字典中，再从中删除元素，直到字典元素个数等于count
     /* CASE 3:
      *
      * The number of elements inside the set is not greater than
@@ -821,6 +856,7 @@ void srandmemberWithCountCommand(redisClient* c) {
             size--;
         }
 
+    // 所需元素个数远小于集合大小，则随机取元素，加入到辅助字典，直到辅助字典大小等于count
     /* CASE 4: We have a big set compared to the requested number of elements.
      *
      * In this case we can simply get random elements from the set and add
@@ -862,6 +898,9 @@ void srandmemberWithCountCommand(redisClient* c) {
     dictRelease(d);
 }
 
+/*
+ * srandmember
+ */
 void srandmemberCommand(redisClient* c) {
     robj* set;
     robj* ele;
@@ -887,6 +926,9 @@ void srandmemberCommand(redisClient* c) {
     }
 }
 
+/*
+ * spop
+ */
 void spopCommand(redisClient* c) {
     robj* set;
     robj* ele;
@@ -913,7 +955,7 @@ void spopCommand(redisClient* c) {
     aux = createStringObject("SREM", 4);
     rewriteClientCommandVector(c, 3, aux, c->argv[1], ele);
     /*
-     * 这里源代码是有问题的，不应该在这里释放ele
+     * 这里3.0版本源代码是有问题的，不应该在这里释放ele
      *
      * decrRefCount(ele);
      */
