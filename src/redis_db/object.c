@@ -421,7 +421,7 @@ robj* resetRefCount(robj* obj) {
 }
 
 /*
- * ...
+ * 检查对象o的类型是否为type
  */
 int checkType(redisClient* c, robj* o, int type) {
 
@@ -449,7 +449,7 @@ int isObjectRepresentableAsLongLong(robj* o, long long* llval) {
 }
 
 /*
- * ...
+ * 尝试返回一个重新编码的更节省内存的对象
  */
 /* Try to encode a string object in order to save space */
 robj* tryObjectEncoding(robj* o) {
@@ -748,7 +748,7 @@ int getLongLongFromObject(robj* o, long long* target) {
 }
 
 /*
- * ...
+ * 尝试从对象中取值，转为long long类型，存在*target中，失败回复错误
  */
 int getLongLongFromObjectOrReply(redisClient* c, robj* o, long long* target, const char* msg) {
 
@@ -769,7 +769,7 @@ int getLongLongFromObjectOrReply(redisClient* c, robj* o, long long* target, con
 }
 
 /*
- * ...
+ * 尝试从对象中取值，转为long类型，存在*target中，失败回复错误
  */
 int getLongFromObjectOrReply(redisClient* c, robj* o, long* target, const char* msg) {
 
@@ -791,7 +791,7 @@ int getLongFromObjectOrReply(redisClient* c, robj* o, long* target, const char* 
 }
 
 /*
- * ...
+ * 尝试从对象中取值，转为long double类型，存在*target中，失败回复错误
  */
 int getLongDoubleFromObjectOrReply(redisClient* c, robj* o, long double* target, const char* msg) {
 

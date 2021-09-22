@@ -497,6 +497,9 @@ void zsetConvert(robj* zobj, int encoding) {
  * Sorted set commands
  */
 
+/*
+ * ZADD，ZINCRBY底层实现
+ */
 /* This generic command implements both ZADD and ZINCRBY. */
 void zaddGenericCommand(redisClient* c, int incr) {
 
@@ -660,10 +663,16 @@ cleanup:
      */
 }
 
+/*
+ * zadd
+ */
 void zaddCommand(redisClient* c) {
     zaddGenericCommand(c, 0);
 }
 
+/*
+ * zcard
+ */
 void zcardCommand(redisClient* c) {
     robj* key = c->argv[1];
     robj* zobj;
@@ -674,6 +683,9 @@ void zcardCommand(redisClient* c) {
     addReplyLongLong(c, zsetLength(zobj));
 }
 
+/*
+ * zcount
+ */
 void zcountCommand(redisClient* c) {
     robj* key = c->argv[1];
     robj* zobj;
@@ -750,6 +762,9 @@ void zcountCommand(redisClient* c) {
     addReplyLongLong(c, count);
 }
 
+/*
+ * zrange，zrevrange底层实现
+ */
 void zrangeGenericCommand(redisClient* c, int reverse) {
     robj* key = c->argv[1];
     robj* zobj;
@@ -854,14 +869,23 @@ void zrangeGenericCommand(redisClient* c, int reverse) {
     }
 }
 
+/*
+ * zrange
+ */
 void zrangeCommand(redisClient* c) {
     zrangeGenericCommand(c, 0);
 }
 
+/*
+ * zrevrange
+ */
 void zrevrangeCommand(redisClient* c) {
     zrangeGenericCommand(c, 1);
 }
 
+/*
+ * zrank，zrevrank底层实现
+ */
 void zrankGenericCommand(redisClient* c, int reverse) {
     robj* key = c->argv[1];
     robj* ele = c->argv[2];
@@ -931,14 +955,23 @@ void zrankGenericCommand(redisClient* c, int reverse) {
     }
 }
 
+/*
+ * zrank
+ */
 void zrankCommand(redisClient* c) {
     zrankGenericCommand(c, 0);
 }
 
+/*
+ * zrevrank
+ */
 void zrevrankCommand(redisClient* c) {
     zrankGenericCommand(c, 1);
 }
 
+/*
+ * zrem
+ */
 void zremCommand(redisClient* c) {
     robj* key = c->argv[1];
     robj* zobj;
@@ -1013,6 +1046,9 @@ void zremCommand(redisClient* c) {
     addReplyLongLong(c, deleted);
 }
 
+/*
+ * zscore
+ */
 void zscoreCommand(redisClient* c) {
     robj* key = c->argv[1];
     robj* zobj;
@@ -1033,7 +1069,7 @@ void zscoreCommand(redisClient* c) {
         dictEntry* de;
 
         c->argv[2] = tryObjectEncoding(c->argv[2]);
-        // ...
+        // 从字典中获取score
         de = dictFind(zs->dict, c->argv[2]);
         if (de != NULL) {
             score = *(double*)dictGetVal(de);

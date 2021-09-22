@@ -569,6 +569,7 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
         sets[j] = setobj;
     }
 
+    // 估计计算差集的时间复杂度，选择合适的算法
     /* Select what DIFF algorithm to use.
      *
      * Algorithm 1 is O(N*M) where N is the size of the element first set
@@ -623,6 +624,7 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
             }
             setTypeReleaseIterator(si);
         }
+    // 计算差集，使用算法1，迭代源集合，对每个元素，依次判断是否出现在剩下的集合中，如果都没有出现，加入到结果集合中
     } else if (op == REDIS_OP_DIFF && sets[0] && diff_algo == 1) {
         /* DIFF Algorithm 1:
          *
@@ -652,6 +654,7 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
         }
         setTypeReleaseIterator(si);
 
+    // 计算差集，使用算法2，先将源集合元素全部加入到结果集合中，再逐个遍历剩下的集合，将出现的元素删除
     } else if (op == REDIS_OP_DIFF && sets[0] && diff_algo == 2) {
         /* DIFF Algorithm 2:
          *
@@ -707,7 +710,7 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
 
             /* notifyKeyspaceEvent(REDIS_NOTIFY_SET, op == REDIS_OP_UNION ? "sunionstore" : "sdiffstore", dstkey, c->db->id); */
 
-        // ...
+        // 结果集为空
         } else {
             decrRefCount(dstset);
             addReply(c, shared.czero);

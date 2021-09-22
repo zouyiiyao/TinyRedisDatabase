@@ -118,7 +118,7 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
 }
 
 /*
- * ...
+ * sdsRemoveFreeSpace: 释放sds多余的空间
  */
 sds sdsRemoveFreeSpace(sds s) {
     struct sdshdr* sh;
