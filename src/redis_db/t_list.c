@@ -336,6 +336,11 @@ void listTypeConvert(robj* subject, int enc) {
  * List Commands
  */
 
+/*
+ * lpush，rpush的底层实现
+ *
+ * 如果列表对象不存在，则创建一个新的列表对象，插入到数据库的键空间
+ */
 void pushGenericCommand(redisClient* c, int where) {
 
     int j;
@@ -381,14 +386,25 @@ void pushGenericCommand(redisClient* c, int where) {
     server.dirty += pushed;
 }
 
+/*
+ * lpush
+ */
 void lpushCommand(redisClient* c) {
     pushGenericCommand(c, REDIS_HEAD);
 }
 
+/*
+ * rpush
+ */
 void rpushCommand(redisClient* c) {
     pushGenericCommand(c, REDIS_TAIL);
 }
 
+/*
+ * lpushx，rpushx，linsert的底层实现
+ *
+ * 如果列表对象不存在，则什么也不做
+ */
 void pushxGenericCommand(redisClient* c, robj* refval, robj* val, int where) {
 
     robj* subject;
@@ -452,16 +468,25 @@ void pushxGenericCommand(redisClient* c, robj* refval, robj* val, int where) {
     addReplyLongLong(c, listTypeLength(subject));
 }
 
+/*
+ * lpushx
+ */
 void lpushxCommand(redisClient* c) {
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     pushxGenericCommand(c, NULL, c->argv[2], REDIS_HEAD);
 }
 
+/*
+ * rpushx
+ */
 void rpushxCommand(redisClient* c) {
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     pushxGenericCommand(c, NULL, c->argv[2], REDIS_TAIL);
 }
 
+/*
+ * linsert
+ */
 void linsertCommand(redisClient* c) {
 
     c->argv[4] = tryObjectEncoding(c->argv[4]);
@@ -477,6 +502,9 @@ void linsertCommand(redisClient* c) {
     }
 }
 
+/*
+ * lpop，rpop的底层实现
+ */
 void popGenericCommand(redisClient* c, int where) {
 
     robj* o = lookupKeyWriteOrReply(c, c->argv[1], shared.nullbulk);
@@ -505,14 +533,23 @@ void popGenericCommand(redisClient* c, int where) {
     }
 }
 
+/*
+ * lpop
+ */
 void lpopCommand(redisClient* c) {
     popGenericCommand(c, REDIS_HEAD);
 }
 
+/*
+ * rpop
+ */
 void rpopCommand(redisClient* c) {
     popGenericCommand(c, REDIS_TAIL);
 }
 
+/*
+ * llen
+ */
 void llenCommand(redisClient* c) {
 
     robj* o = lookupKeyReadOrReply(c, c->argv[1], shared.czero);
@@ -522,6 +559,9 @@ void llenCommand(redisClient* c) {
     addReplyLongLong(c, listTypeLength(o));
 }
 
+/*
+ * lindex
+ */
 void lindexCommand(redisClient* c) {
 
     robj* o = lookupKeyReadOrReply(c, c->argv[1], shared.nullbulk);
@@ -568,6 +608,9 @@ void lindexCommand(redisClient* c) {
     }
 }
 
+/*
+ * lrem
+ */
 void lremCommand(redisClient* c) {
 
     robj* subject;
@@ -618,6 +661,9 @@ void lremCommand(redisClient* c) {
     /* if (removed) signalModifiedKey(c->db, c->argv[1]); */
 }
 
+/*
+ * ltrim
+ */
 void ltrimCommand(redisClient* c) {
 
     robj* o;
@@ -689,6 +735,9 @@ void ltrimCommand(redisClient* c) {
     addReply(c, shared.ok);
 }
 
+/*
+ * lset
+ */
 void lsetCommand(redisClient* c) {
 
     robj* o = lookupKeyWriteOrReply(c, c->argv[1], shared.nokeyerr);
