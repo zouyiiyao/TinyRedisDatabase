@@ -149,7 +149,9 @@ dictType hashDictType = {
     dictRedisObjectDestructor,
     dictRedisObjectDestructor
 };
-
+/*
+ * 字典用作键空间的底层实现时，使用的特有函数
+ */
 /* Db->dict, keys are sds strings, vals are Redis objects. */
 dictType dbDictType = {
     dictSdsHash,
@@ -160,6 +162,9 @@ dictType dbDictType = {
     dictRedisObjectDestructor
 };
 
+/*
+ * 字典用作过期字典的底层实现时，使用的特有函数
+ */
 /* Db->expires */
 dictType keyptrDictType = {
     dictSdsHash,

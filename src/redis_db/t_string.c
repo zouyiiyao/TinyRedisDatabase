@@ -112,21 +112,33 @@ void setCommand(redisClient* c) {
     setGenericCommand(c, flags, c->argv[1], c->argv[2], expire, unit, NULL, NULL);
 }
 
+/*
+ * setnx
+ */
 void setnxCommand(redisClient* c) {
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     setGenericCommand(c, REDIS_SET_NX, c->argv[1], c->argv[2], NULL, UNIT_SECONDS, shared.cone, shared.czero);
 }
 
+/*
+ * setex
+ */
 void setexCommand(redisClient* c) {
     c->argv[3] = tryObjectEncoding(c->argv[3]);
     setGenericCommand(c, REDIS_SET_NO_FLAGS, c->argv[1], c->argv[3], c->argv[2], UNIT_SECONDS, NULL, NULL);
 }
 
+/*
+ * psetex
+ */
 void psetexCommand(redisClient* c) {
     c->argv[3] = tryObjectEncoding(c->argv[3]);
     setGenericCommand(c, REDIS_SET_NO_FLAGS, c->argv[1], c->argv[3], c->argv[2], UNIT_MILLISECONDS, NULL, NULL);
 }
 
+/*
+ * get命令的底层实现
+ */
 int getGenericCommand(redisClient* c) {
 
     robj* o;
@@ -143,10 +155,18 @@ int getGenericCommand(redisClient* c) {
     }
 }
 
+/*
+ * get
+ *
+ * 获取指定键的字符串类型值
+ */
 void getCommand(redisClient* c) {
     getGenericCommand(c);
 }
 
+/*
+ * incr，decr，incrby，decrby命令的底层实现
+ */
 void incrDecrCommand(redisClient* c, long long incr) {
 
     long long value;
@@ -185,14 +205,23 @@ void incrDecrCommand(redisClient* c, long long incr) {
     addReply(c, shared.crlf);
 }
 
+/*
+ * incr
+ */
 void incrCommand(redisClient* c) {
     incrDecrCommand(c, 1);
 }
 
+/*
+ * decr
+ */
 void decrCommand(redisClient* c) {
     incrDecrCommand(c, -1);
 }
 
+/*
+ * incrby
+ */
 void incrbyCommand(redisClient* c) {
     long long incr;
 
@@ -200,6 +229,9 @@ void incrbyCommand(redisClient* c) {
     incrDecrCommand(c, incr);
 }
 
+/*
+ * decrby
+ */
 void decrbyCommand(redisClient* c) {
     long long incr;
 
@@ -207,6 +239,9 @@ void decrbyCommand(redisClient* c) {
     incrDecrCommand(c, -incr);
 }
 
+/*
+ * incrbyfloat
+ */
 void incrbyfloatCommand(redisClient* c) {
     long double incr;
     long double value;
@@ -251,6 +286,11 @@ void incrbyfloatCommand(redisClient* c) {
     rewriteClientCommandArgument(c, 2, new);
 }
 
+/*
+ * append
+ *
+ * 空间预分配策略
+ */
 void appendCommand(redisClient* c) {
 
     size_t totlen;
