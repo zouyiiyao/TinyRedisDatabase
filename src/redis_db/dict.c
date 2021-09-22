@@ -388,7 +388,7 @@ int dictReplace(dict* d, void* key, void* val) {
 }
 
 /*
- * ...
+ * 返回字典中键对应的节点，如果键不存在，则创建一个新节点
  */
 dictEntry* dictReplaceRaw(dict* d, void* key) {
 

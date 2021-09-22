@@ -336,6 +336,59 @@ void listTypeConvert(robj* subject, int enc) {
  * List Commands
  */
 
+void pushGenericCommand(redisClient* c, int where) {
+
+    int j;
+    /* int waiting = 0; */
+    int pushed = 0;
+
+    robj* lobj = lookupKeyWrite(c->db, c->argv[1]);
+
+    /* int may_have_waiting_clients = (lobj == NULL); */
+
+    if (lobj && lobj->type != REDIS_LIST) {
+        addReply(c, shared.wrongtypeerr);
+        return;
+    }
+
+    /* if (may_have_waiting_clients) signalListAsReady(c, c->argv[1]); */
+
+    for (j = 2; j < c->argc; j++) {
+
+        c->argv[j] = tryObjectEncoding(c->argv[j]);
+
+        if (!lobj) {
+            lobj = createZiplistObject();
+            dbAdd(c->db, c->argv[1], lobj);
+        }
+
+        listTypePush(lobj, c->argv[j], where);
+        pushed++;
+    }
+
+    addReplyLongLong(c, /* waiting + */ (lobj ? listTypeLength(lobj) : 0));
+
+    /*
+     * if (pushed) {
+     *     char* event = (where == REDIS_HEAD) ? "lpush" : "rpush";
+     *
+     *     signalModifiedKey(c->db, c->argv[1]);
+     *
+     *     notifyKeyspaceEvent(REDIS_NOTIFY_LIST, event, c->argv[1], c->db->id);
+     * }
+     */
+
+    server.dirty += pushed;
+}
+
+void lpushCommand(redisClient* c) {
+    pushGenericCommand(c, REDIS_HEAD);
+}
+
+void rpushCommand(redisClient* c) {
+    pushGenericCommand(c, REDIS_TAIL);
+}
+
 void pushxGenericCommand(redisClient* c, robj* refval, robj* val, int where) {
 
     robj* subject;

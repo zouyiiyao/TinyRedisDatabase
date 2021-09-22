@@ -1187,6 +1187,8 @@ void decrbyCommand(redisClient* c);
 void incrbyfloatCommand(redisClient* c);
 
 /* List commands */
+void lpushCommand(redisClient* c);
+void rpushCommand(redisClient* c);
 void lpushxCommand(redisClient* c);
 void rpushxCommand(redisClient* c);
 void linsertCommand(redisClient* c);

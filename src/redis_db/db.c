@@ -12,16 +12,19 @@
  */
 
 /*
- * ...
+ * 从数据库db中取出键key的值对象
  */
 robj* lookupKey(redisDb* db, robj* key) {
 
+    // 查找键空间
     dictEntry* de = dictFind(db->dict, key->ptr);
 
+    // 键存在，返回val
     if (de) {
 
         robj* val = dictGetVal(de);
 
+        // 每次读取键，都更新它的LRU(最近一次使用)时间
         /* Update the access time for the ageing algorithm.
          * Don't do it if we have a saving child, as this will trigger
          * a copy on write madness. */
@@ -29,13 +32,15 @@ robj* lookupKey(redisDb* db, robj* key) {
             val->lru = getLRUClock();
 
         return val;
+    // 键不存在，返回NULL
     } else {
         return NULL;
     }
 }
 
 /*
- * ...
+ * 为读取操作取出键key的值对象，会检查键是否过期，如果过期将其删除(惰性删除)，
+ * 会更新服务器的键空间命中/未命中信息
  */
 robj* lookupKeyRead(redisDb* db, robj* key) {
 
@@ -54,7 +59,7 @@ robj* lookupKeyRead(redisDb* db, robj* key) {
 }
 
 /*
- * ...
+ * 为写入操作取出键key的值对象，会检查键是否过期，如果过期将其删除(惰性删除)
  */
 robj* lookupKeyWrite(redisDb* db, robj* key) {
 
@@ -64,7 +69,7 @@ robj* lookupKeyWrite(redisDb* db, robj* key) {
 }
 
 /*
- * ...
+ * 调用lookupKeyRead，如果键不存在，向客户端发送reply
  */
 robj* lookupKeyReadOrReply(redisClient* c, robj* key, robj* reply) {
 
@@ -76,7 +81,7 @@ robj* lookupKeyReadOrReply(redisClient* c, robj* key, robj* reply) {
 }
 
 /*
- * ...
+ * 调用lookupKeyWrite，如果键不存在，向客户端发送reply
  */
 robj* lookupKeyWriteOrReply(redisClient* c, robj* key, robj* reply) {
 
@@ -88,13 +93,14 @@ robj* lookupKeyWriteOrReply(redisClient* c, robj* key, robj* reply) {
 }
 
 /*
- * ...
+ * 为数据库db的键空间添加一个键值对，
+ * 如果键存在，程序终止
  */
 void dbAdd(redisDb* db, robj* key, robj* val) {
 
     sds copy = sdsdup(key->ptr);
 
-    // key is sds
+    // 键空间的键是一个sds，不是一个redis对象
     int retval = dictAdd(db->dict, copy, val);
 
     assert(retval == REDIS_OK);
@@ -103,7 +109,8 @@ void dbAdd(redisDb* db, robj* key, robj* val) {
 }
 
 /*
- * ...
+ * 为数据库db中已经存在的键关联一个新值，
+ * 如果键不存在，程序终止
  */
 void dbOverwrite(redisDb* db, robj* key, robj* val) {
 
@@ -115,32 +122,37 @@ void dbOverwrite(redisDb* db, robj* key, robj* val) {
 }
 
 /*
- * ...
+ * 高层次的set函数，调用dbAdd或dbOverwrite完成实际的工作
  */
 void setKey(redisDb* db, robj* key, robj* val) {
 
+    // 如果键不存在，调用dbAdd
     if (lookupKeyWrite(db, key) == NULL) {
         dbAdd(db, key, val);
+    // 如果键已经存在，调用dbOverwrite
     } else {
         dbOverwrite(db, key, val);
     }
 
+    // 增加值对象的引用计数
     incrRefCount(val);
 
+    // 移除键key的过期时间，变为持久键
     removeExpire(db, key);
 
     /* signalModifiedKey(db, key); */
 }
 
 /*
- * ...
+ * 检查键key是否存在于数据库中
  */
 int dbExists(redisDb* db, robj* key) {
     return dictFind(db->dict, key->ptr) != NULL;
 }
 
 /*
- * ...
+ * 从数据库中随机返回一个键，并为其创建一个新的redis对象，
+ * 返回前会对键进行检查，如果已经过期，则删除它，重新随机
  */
 robj* dbRandomKey(redisDb* db) {
 
@@ -170,7 +182,8 @@ robj* dbRandomKey(redisDb* db) {
 }
 
 /*
- * ...
+ * 从数据库中删除给定键key，并删除其过期时间，
+ * 在键空间和过期字典中进行删除
  */
 int dbDelete(redisDb* db, robj* key) {
 
@@ -185,7 +198,9 @@ int dbDelete(redisDb* db, robj* key) {
 }
 
 /*
- * ...
+ * 保证对象返回时是准备好可以改变的
+ * 如果对象o是共享的(o->refcount != 1)或不是REDIS_ENCODING_RAW编码的，根据原对象的内容创建一个新的非共享对象；
+ * 否则，返回原对象o；
  */
 robj* dbUnshareStringValue(redisDb* db, robj* key, robj* o) {
 
@@ -201,7 +216,7 @@ robj* dbUnshareStringValue(redisDb* db, robj* key, robj* o) {
 }
 
 /*
- * ...
+ * 清空服务器的所有数据库
  */
 long long emptyDb(void(callback)(void*)) {
 
@@ -223,7 +238,7 @@ long long emptyDb(void(callback)(void*)) {
 }
 
 /*
- * ...
+ * 将客户端的目标数据库切换为id指定的数据库
  */
 int selectDb(redisClient* c, int id) {
 
@@ -238,24 +253,10 @@ int selectDb(redisClient* c, int id) {
 /* Type agnostic commands operating on the key space */
 
 /*
- * ...
- */
-//void flushdbCommand(redisClient* c) {
-//
-//    server.dirty += dictSize(c->db->dict);
-//
-//    /* signalFlushedDb(c->db->id); */
-//
-//    dictEmpty(c->db->dict, NULL);
-//    dictEmpty(c->db->expires, NULL);
-//
-//    /* if (server.cluster_enabled) slotToKeyFlush(); */
-//
-//    addReply(c, shared.ok);
-//}
-
-/*
- * ...
+ * del
+ * 
+ * 删除键，删除之前先检查键是否过期，调用expireIfNeeded；
+ * 如果未过期，调用dbDelete；
  */
 void delCommand(redisClient* c) {
 
@@ -282,10 +283,13 @@ void delCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * exists
+ *
+ * 回复键是否存在
  */
 void existsCommand(redisClient* c) {
 
+    // 先检查键是否过期，如果过期将其删除
     expireIfNeeded(c->db, c->argv[1]);
 
     if (dbExists(c->db, c->argv[1])) {
@@ -296,12 +300,15 @@ void existsCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * select
+ *
+ * 切换客户端的目标数据库，调用selectDb完成实际的工作
  */
 void selectCommand(redisClient* c) {
 
     long id;
 
+    // 检查指定的目标数据库id是否合法
     if (getLongFromObjectOrReply(c, c->argv[1], &id, "invalid DB index") != REDIS_OK)
         return;
 
@@ -320,7 +327,9 @@ void selectCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * randomkey
+ *
+ * 从客户端的目标数据库中随机返回一个键，调用dbRandomKey完成实际的工作
  */
 void randomkeyCommand(redisClient* c) {
 
@@ -336,7 +345,10 @@ void randomkeyCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * keys
+ *
+ * 遍历整个数据库，返回名字与模式匹配的键，
+ * 遍历过程中会检查键是否过期，如果过期将其删除，不会返回
  */
 void keysCommand(redisClient* c) {
 
@@ -376,6 +388,10 @@ void keysCommand(redisClient* c) {
     setDeferredMultiBulkLength(c, replylen, numkeys);
 }
 
+/*
+ * dictScan的回调函数，在迭代字典元素时对每个元素调用，
+ * 收集元素，将键和值添加到指定的列表尾
+ */
 /* This callback is used by scanGenericCommand in order to collect elements
  * returned by the dictionary iterator into a list. */
 void scanCallback(void* privdata, const dictEntry* de) {
@@ -409,6 +425,9 @@ void scanCallback(void* privdata, const dictEntry* de) {
     if (val) listAddNodeTail(keys, val);
 }
 
+/*
+ * 从对象o中解析出SCAN游标，将其存在*cursor中
+ */
 /* Try to parse a SCAN cursor stored at object 'o':
  * if the cursor is valid, store it as unsigned integer into *cursor and
  * returns REDIS_OK. Otherwise return REDIS_ERR and send an error to the
@@ -428,6 +447,9 @@ int parseScanCursorOrReply(redisClient* c, robj* o, unsigned long* cursor) {
     return REDIS_OK;
 }
 
+/*
+ * SCAN，HSCAN，SSCAN命令的底层实现
+ */
 /*
  * This command implements SCAN, HSCAN and SSCAN commands.
  */
@@ -603,6 +625,14 @@ cleanup:
     listRelease(keys);
 }
 
+/*
+ * scan
+ *
+ * 用于增量迭代当前数据库中的数据库键，需要带cursor调用，
+ * 由于每次只返回少量元素，所以不会像keys或smembers命令一样阻塞服务器(可能数秒)
+ * 
+ * 注意: 可能会返回重复元素，这个问题由应用程序解决
+ */
 /* The SCAN command completely relies on scanGenericCommand. */
 void scanCommand(redisClient* c) {
     unsigned long cursor;
@@ -610,14 +640,29 @@ void scanCommand(redisClient* c) {
     scanGenericCommand(c, NULL, cursor);
 }
 
+/*
+ * dbsize
+ *
+ * 返回当前数据库中key的数量
+ */
 void dbsizeCommand(redisClient* c) {
     addReplyLongLong(c, dictSize(c->db->dict));
 }
 
+/*
+ * lastsave
+ *
+ * 以UNIX时间戳格式返回最近一次Redis成功将数据保存到磁盘上的时间
+ */
 void lastsaveCommand(redisClient* c) {
     addReplyLongLong(c, server.lastsave);
 }
 
+/*
+ * type
+ *
+ * 以字符串的形式返回存储在key中的值的类型
+ */
 void typeCommand(redisClient* c) {
     robj* o;
     char* type;
@@ -653,7 +698,9 @@ void typeCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * shutdown
+ *
+ * 如果配置了持久化策略，那么这个命令能够保证在关闭redis服务进程的时候数据不会丢失
  */
 void shutdownCommand(redisClient* c) {
     int flags = 0;
@@ -688,7 +735,7 @@ void shutdownCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * rename，renamenx命令的底层实现
  */
 void renameGenericCommand(redisClient* c, int nx) {
     robj* o;
@@ -700,15 +747,15 @@ void renameGenericCommand(redisClient* c, int nx) {
         return;
     }
 
+    // 检查来源键是否存在
     if ((o = lookupKeyWriteOrReply(c, c->argv[1], shared.nokeyerr)) == NULL)
         return;
 
-    // ...
     incrRefCount(o);
 
     expire = getExpire(c->db, c->argv[1]);
 
-    // ...
+    // 检查目标键是否存在
     if (lookupKeyWrite(c->db, c->argv[2]) != NULL) {
 
         // RENAMENX
@@ -742,19 +789,28 @@ void renameGenericCommand(redisClient* c, int nx) {
 }
 
 /*
- * ...
+ * rename
+ *
+ * 修改key的名字为newkey，如果newkey已经存在，则会执行删除操作(隐式)
  */
 void renameCommand(redisClient* c) {
     renameGenericCommand(c, 0);
 }
 
 /*
- * ...
+ * renamenx
+ *
+ * 修改key的名字为newkey，仅在newkey不存在时进行
  */
 void renamenxCommand(redisClient* c) {
     renameGenericCommand(c, 1);
 }
 
+/*
+ * move
+ *
+ * 将当前数据库的key移动到指定的数据库当中
+ */
 void moveCommand(redisClient* c) {
     robj* o;
     redisDb* src;
@@ -812,7 +868,8 @@ void moveCommand(redisClient* c) {
  */
 
 /*
- * ...
+ * 移除键key的过期时间，键必须在键空间存在，
+ * 如果键key设置了过期时间，则从过期字典中将键key删除
  */
 int removeExpire(redisDb* db, robj* key) {
 
@@ -822,13 +879,14 @@ int removeExpire(redisDb* db, robj* key) {
 }
 
 /*
- * ...
+ * 将键key的过期时间设置为when，键必须在键空间存在
  */
 void setExpire(redisDb* db, robj* key, long long when) {
 
     dictEntry* kde;
     dictEntry* de;
 
+    // 过期字典复用键空间字典的键(sds)
     /* Reuse the sds from the main dict in the expire dict */
     kde = dictFind(db->dict, key->ptr);
 
@@ -836,11 +894,12 @@ void setExpire(redisDb* db, robj* key, long long when) {
 
     de = dictReplaceRaw(db->expires, dictGetKey(kde));
 
+    // 设置键的过期时间
     dictSetSignedIntegerVal(de, when);
 }
 
 /*
- * ...
+ * 返回给定key的过期时间，键必须在键空间存在
  */
 long long getExpire(redisDb* db, robj* key) {
 
@@ -850,11 +909,12 @@ long long getExpire(redisDb* db, robj* key) {
 
     assert(dictFind(db->dict, key->ptr) != NULL);
 
+    // 取键的过期时间
     return dictGetSignedIntegerVal(de);
 }
 
 /*
- * ...
+ * 当一个键过期时，向AOF文件传播一个显式的del命令
  */
 void propagateExpire(redisDb* db, robj* key) {
     robj* argv[2];
@@ -875,25 +935,30 @@ void propagateExpire(redisDb* db, robj* key) {
 }
 
 /*
- * ...
+ * 检查键key是否已经过期，如果过期，将它从数据库中移除
  */
 int expireIfNeeded(redisDb* db, robj* key) {
 
     mstime_t when = getExpire(db, key);
     mstime_t now;
 
+    // 没有过期时间
     if (when < 0) return 0;
 
+    // 服务器正在载入，不做任何过期检查
     if (server.loading) return 0;
 
     now = /* server.lua_caller ? server.lua_time_start : */ mstime();
 
     /* if (server.masterhost != NULL) return now > when; */
 
+    // 有过期时间，但未到期
     if (now <= when) return 0;
 
+    // 需要删除，更新统计信息
     server.stat_expiredkeys++;
 
+    // 把删除信息传播到AOF
     propagateExpire(db, key);
 
     /* notifyKeyspaceEvent(REDIS_NOTIFY_EXPIRED, "expired", key, db->id); */
@@ -905,6 +970,9 @@ int expireIfNeeded(redisDb* db, robj* key) {
  * Expires Commands
  */
 
+/*
+ * EXPIRE，PEXPIRE，EXPIREAT，PEXPIREAT命令的底层实现
+ */
 /* This is the generic command implementation for EXPIRE, PEXPIRE, EXPIREAT
  * and PEXPIREAT. Because the commad second argument may be relative or absolute
  * the "basetime" argument is used to signal what the base time is (either 0
@@ -960,10 +1028,20 @@ void expireGenericCommand(redisClient* c, long long basetime, int unit) {
     }
 }
 
+/*
+ * expire
+ *
+ * 设置过期时间，参数为时间间隔
+ */
 void expireCommand(redisClient* c) {
     expireGenericCommand(c, mstime(), UNIT_SECONDS);
 }
 
+/*
+ * expireat
+ *
+ * 设置过期时间，参数为时间戳
+ */
 void expireatCommand(redisClient* c) {
     expireGenericCommand(c, 0, UNIT_SECONDS);
 }
@@ -977,7 +1055,7 @@ void pexpireatCommand(redisClient* c) {
 }
 
 /*
- * ...
+ * TTL，PTTL命令的底层实现
  */
 void ttlGenericCommand(redisClient* c, int output_ms) {
 
@@ -1005,14 +1083,29 @@ void ttlGenericCommand(redisClient* c, int output_ms) {
     }
 }
 
+/*
+ * ttl
+ *
+ * 返回键的剩余生存时间(s)
+ */
 void ttlCommand(redisClient* c) {
     ttlGenericCommand(c, 0);
 }
 
+/*
+ * pttl
+ *
+ * 返回键的剩余生存时间(ms)
+ */
 void pttlCommand(redisClient* c) {
     ttlGenericCommand(c, 1);
 }
 
+/*
+ * persist
+ *
+ * 删除给定键的过期时间
+ */
 void persistCommand(redisClient* c) {
 
     dictEntry* de;

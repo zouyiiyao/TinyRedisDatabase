@@ -10,7 +10,7 @@
  */
 
 /*
- * ...
+ * 检查给定字符串长度len是否超过限制值512MB
  */
 static int checkStringLength(redisClient* c, long long size) {
 
@@ -21,6 +21,10 @@ static int checkStringLength(redisClient* c, long long size) {
 
     return REDIS_OK;
 }
+
+/*
+ * SET，SETEX，PSETEX，SETNX命令的底层实现
+ */
 
 /* The setGenericCommand() function implements the SET operation with different
  * options and variants. This function is called in order to implement the
@@ -67,7 +71,11 @@ void setGenericCommand(redisClient* c, int flags, robj* key, robj* val, robj* ex
 
     addReply(c, ok_reply ? ok_reply : shared.ok);
 }
-
+/*
+ * set
+ *
+ * 为给定键设置字符串值，可指定过期时间
+ */
 /* SET key value [NX] [XX] [EX <seconds>] [PX <milliseconds>] */
 void setCommand(redisClient* c) {
 

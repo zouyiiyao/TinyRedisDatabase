@@ -40,6 +40,10 @@ unsigned int getLRUClock(void) {
     return (mstime() / REDIS_LRU_CLOCK_RESOLUTION) & REDIS_LRU_CLOCK_MAX;
 }
 
+unsigned int dictSdsHash(const void* key) {
+    return dictGenHashFunction((unsigned char*)key, sdslen((char*)key));
+}
+
 /*
  * 比较两个sds
  */
@@ -51,6 +55,12 @@ int dictSdsKeyCompare(void* privdata, const void* key1, const void* key2) {
     l2 = sdslen((sds)key2);
     if (l1 != l2) return 0;
     return memcmp(key1, key2, l1) == 0;
+}
+
+void dictSdsDestructor(void* privdata, void* val) {
+    DICT_NOTUSED(privdata);
+
+    sdsfree(val);
 }
 
 /*
@@ -138,6 +148,26 @@ dictType hashDictType = {
     dictEncObjKeyCompare,
     dictRedisObjectDestructor,
     dictRedisObjectDestructor
+};
+
+/* Db->dict, keys are sds strings, vals are Redis objects. */
+dictType dbDictType = {
+    dictSdsHash,
+    NULL,
+    NULL,
+    dictSdsKeyCompare,
+    dictSdsDestructor,
+    dictRedisObjectDestructor
+};
+
+/* Db->expires */
+dictType keyptrDictType = {
+    dictSdsHash,
+    NULL,
+    NULL,
+    dictSdsKeyCompare,
+    NULL,
+    NULL
 };
 
 /*
