@@ -624,6 +624,7 @@ struct redisServer {
     // TCP监听端口
     int port;
 
+    // TPC listen backlog，指示了内核监听队列的最大长度
     int tcp_backlog;
 
     // 地址
