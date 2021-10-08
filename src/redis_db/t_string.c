@@ -6,6 +6,12 @@
 #include "redis.h"
 
 /*
+ * 注意: 
+ * signalModifiedKey函数与独立功能事务相关，在本代码中删除；
+ * notifyKeyspaceEvent函数与独立功能发布/订阅相关，在本代码中删除；
+ */
+
+/*
  * String Commands
  */
 
@@ -65,14 +71,10 @@ void setGenericCommand(redisClient* c, int flags, robj* key, robj* val, robj* ex
 
     if (expire) setExpire(c->db, key, mstime() + milliseconds);
 
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_STRING, "set", key, c->db->id); */
-
-    /* if (expire) notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "expire", key, c->db->id); */
-
     addReply(c, ok_reply ? ok_reply : shared.ok);
 }
 /*
- * set
+ * SET命令
  *
  * 为给定键设置字符串值，可指定过期时间
  */
@@ -113,7 +115,7 @@ void setCommand(redisClient* c) {
 }
 
 /*
- * setnx
+ * SETNX命令
  */
 void setnxCommand(redisClient* c) {
     c->argv[2] = tryObjectEncoding(c->argv[2]);
@@ -121,7 +123,7 @@ void setnxCommand(redisClient* c) {
 }
 
 /*
- * setex
+ * SETEX命令
  */
 void setexCommand(redisClient* c) {
     c->argv[3] = tryObjectEncoding(c->argv[3]);
@@ -129,7 +131,7 @@ void setexCommand(redisClient* c) {
 }
 
 /*
- * psetex
+ * PSETEX命令
  */
 void psetexCommand(redisClient* c) {
     c->argv[3] = tryObjectEncoding(c->argv[3]);
@@ -137,7 +139,7 @@ void psetexCommand(redisClient* c) {
 }
 
 /*
- * get命令的底层实现
+ * GET命令的底层实现
  */
 int getGenericCommand(redisClient* c) {
 
@@ -156,7 +158,7 @@ int getGenericCommand(redisClient* c) {
 }
 
 /*
- * get
+ * GET命令
  *
  * 获取指定键的字符串类型值
  */
@@ -165,7 +167,7 @@ void getCommand(redisClient* c) {
 }
 
 /*
- * incr，decr，incrby，decrby命令的底层实现
+ * INCR，DECR，INCRBY，DECRBY命令的底层实现
  */
 void incrDecrCommand(redisClient* c, long long incr) {
 
@@ -194,10 +196,6 @@ void incrDecrCommand(redisClient* c, long long incr) {
     else
         dbAdd(c->db, c->argv[1], new);
 
-    /* signalModifiedKey(c->db, c->argv[1]); */
-
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_STRING, "incrby", c->argv[1], c->db->id); */
-
     server.dirty++;
 
     addReply(c, shared.colon);
@@ -206,21 +204,21 @@ void incrDecrCommand(redisClient* c, long long incr) {
 }
 
 /*
- * incr
+ * INCR命令
  */
 void incrCommand(redisClient* c) {
     incrDecrCommand(c, 1);
 }
 
 /*
- * decr
+ * DECR命令
  */
 void decrCommand(redisClient* c) {
     incrDecrCommand(c, -1);
 }
 
 /*
- * incrby
+ * INCRBY命令
  */
 void incrbyCommand(redisClient* c) {
     long long incr;
@@ -230,7 +228,7 @@ void incrbyCommand(redisClient* c) {
 }
 
 /*
- * decrby
+ * DECRBY命令
  */
 void decrbyCommand(redisClient* c) {
     long long incr;
@@ -240,7 +238,7 @@ void decrbyCommand(redisClient* c) {
 }
 
 /*
- * incrbyfloat
+ * INCRBYFLOAT命令
  */
 void incrbyfloatCommand(redisClient* c) {
     long double incr;
@@ -269,14 +267,12 @@ void incrbyfloatCommand(redisClient* c) {
     else
         dbAdd(c->db, c->argv[1], new);
 
-    /* signalModifiedKey(c->db, c->argv[1]); */
-
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_STRING, "incrbyfloat", c->argv[1], c->db->id); */
 
     server.dirty++;
 
     addReplyBulk(c, new);
 
+    // 将INCRBYFLOAT重写为等价的SET命令
     /* Always replicate INCRBYFLOAT as a SET command with the final value
      * in order to make sure that differences in float precision or formatting
      * will not create differences in replicas or after an AOF restart. */
@@ -287,7 +283,7 @@ void incrbyfloatCommand(redisClient* c) {
 }
 
 /*
- * append
+ * APPEND命令
  *
  * 空间预分配策略
  */
@@ -319,10 +315,6 @@ void appendCommand(redisClient* c) {
         o->ptr = sdscatlen(o->ptr, append->ptr, sdslen(append->ptr));
         totlen = sdslen(o->ptr);
     }
-
-    /* signalModifiedKey(c->db, c->argv[1]); */
-
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_STRING, "append", c->argv[1], c->db->id); */
 
     server.dirty++;
 
