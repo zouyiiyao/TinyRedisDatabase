@@ -301,7 +301,6 @@ void sremCommand(redisClient* c) {
             deleted++;
             if (setTypeSize(set) == 0) {
                 dbDelete(c->db, c->argv[1]);
-                keyremoved = 1;
                 break;
             }
         }
@@ -490,7 +489,7 @@ void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, 
         /* Store the resulting set into the target, if the intersection
          * is not an empty set. */
         // 若dstkey已经存在，则从键空间中将其删除
-        int deleted = dbDelete(c->db, dstkey);
+        /* int deleted = */ dbDelete(c->db, dstkey);
 
         if (setTypeSize(dstset) > 0) {
             dbAdd(c->db, dstkey, dstset);
@@ -687,7 +686,7 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
     } else {
         /* If we have a target key where to store the resulting set
          * create this key with the result set inside */
-        int deleted = dbDelete(c->db, dstkey);
+        /* int deleted = */ dbDelete(c->db, dstkey);
 
         if (setTypeSize(dstset) > 0) {
             dbAdd(c->db, dstkey, dstset);
