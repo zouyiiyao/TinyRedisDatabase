@@ -4,8 +4,15 @@
 
 #include <signal.h>
 #include <ctype.h>
+#include <strings.h>
 
 #include "redis.h"
+
+/*
+ * 注意: 
+ * signalModifiedKey函数与独立功能事务相关，在本代码中删除；
+ * notifyKeyspaceEvent函数与独立功能发布/订阅相关，在本代码中删除；
+ */
 
 /*
  * C-level DB API
@@ -24,7 +31,8 @@ robj* lookupKey(redisDb* db, robj* key) {
 
         robj* val = dictGetVal(de);
 
-        // 每次读取键，都更新它的LRU(最近一次使用)时间
+        // 每次读取键，都更新它的LRU(最近一次使用)时间，
+        // 只有在不存在子进程时执行，防止破坏copy-on-write机制
         /* Update the access time for the ageing algorithm.
          * Don't do it if we have a saving child, as this will trigger
          * a copy on write madness. */
@@ -50,6 +58,7 @@ robj* lookupKeyRead(redisDb* db, robj* key) {
 
     val = lookupKey(db, key);
 
+    // 维护统计信息
     if (val == NULL)
         server.stat_keyspace_misses++;
     else
@@ -105,6 +114,7 @@ void dbAdd(redisDb* db, robj* key, robj* val) {
 
     assert(retval == REDIS_OK);
 
+    // TODO: 集群相关
     /* if (server.cluster_enabled) slotToKeyAdd(key); */
 }
 
@@ -139,8 +149,6 @@ void setKey(redisDb* db, robj* key, robj* val) {
 
     // 移除键key的过期时间，变为持久键
     removeExpire(db, key);
-
-    /* signalModifiedKey(db, key); */
 }
 
 /*
@@ -190,6 +198,7 @@ int dbDelete(redisDb* db, robj* key) {
     if (dictSize(db->expires) > 0) dictDelete(db->expires, key->ptr);
 
     if (dictDelete(db->dict, key->ptr) == DICT_OK) {
+        // TODO: 集群相关
         /* if (server.cluster_enabled) slotToKeyDel(key); */
         return 1;
     } else {
@@ -232,6 +241,7 @@ long long emptyDb(void(callback)(void*)) {
         dictEmpty(server.db[j].expires, callback);
     }
 
+    // TODO: 集群相关
     /* if (server.cluster_enabled) slotToKeyFlush(); */
 
     return removed;
@@ -250,10 +260,14 @@ int selectDb(redisClient* c, int id) {
     return REDIS_OK;
 }
 
+/*
+ * 与类型无关的数据库命令，作用于键空间上
+ */
+
 /* Type agnostic commands operating on the key space */
 
 /*
- * del
+ * DEL命令
  * 
  * 删除键，删除之前先检查键是否过期，调用expireIfNeeded；
  * 如果未过期，调用dbDelete；
@@ -263,16 +277,16 @@ void delCommand(redisClient* c) {
     int deleted = 0;
     int j;
 
+    // 遍历所有输入参数(键)
     for (j = 1; j < c->argc; j++) {
 
+        // 先检查键是否过期，如果过期将其删除
         expireIfNeeded(c->db, c->argv[j]);
 
+        // 尝试删除键
         if (dbDelete(c->db, c->argv[j])) {
 
-            /* signalModifiedKey(c->db, c->argv[j]); */
-
-            /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[j], c->db->id); */
-
+            // 维护键空间改动次数的统计信息，与持久化有关
             server.dirty++;
 
             deleted++;
@@ -283,7 +297,7 @@ void delCommand(redisClient* c) {
 }
 
 /*
- * exists
+ * EXISTS命令
  *
  * 回复键是否存在
  */
@@ -300,7 +314,7 @@ void existsCommand(redisClient* c) {
 }
 
 /*
- * select
+ * SELECT命令
  *
  * 切换客户端的目标数据库，调用selectDb完成实际的工作
  */
@@ -312,6 +326,7 @@ void selectCommand(redisClient* c) {
     if (getLongFromObjectOrReply(c, c->argv[1], &id, "invalid DB index") != REDIS_OK)
         return;
 
+    // TODO: 集群相关
     /*
      * if (server.cluster_enabled && id != 0) {
      *     addReplyError(c, "SELECT is not allowed in cluster mode");
@@ -327,7 +342,7 @@ void selectCommand(redisClient* c) {
 }
 
 /*
- * randomkey
+ * RANDOMKEY命令
  *
  * 从客户端的目标数据库中随机返回一个键，调用dbRandomKey完成实际的工作
  */
@@ -345,7 +360,7 @@ void randomkeyCommand(redisClient* c) {
 }
 
 /*
- * keys
+ * KEYS命令
  *
  * 遍历整个数据库，返回名字与模式匹配的键，
  * 遍历过程中会检查键是否过期，如果过期将其删除，不会返回
@@ -449,6 +464,8 @@ int parseScanCursorOrReply(redisClient* c, robj* o, unsigned long* cursor) {
 
 /*
  * SCAN，HSCAN，SSCAN命令的底层实现
+ * 如果o为NULL，函数将使用当前数据库作为迭代对象；
+ * 如果o不为NULL，则o必须是一个哈希对象或集合对象或有序集合对象；
  */
 /*
  * This command implements SCAN, HSCAN and SSCAN commands.
@@ -533,6 +550,7 @@ void scanGenericCommand(redisClient* c, robj* o, unsigned long cursor) {
 
         privdata[0] = keys;
         privdata[1] = o;
+        // 迭代字典
         do {
             cursor = dictScan(ht, cursor, scanCallback, privdata);
         } while (cursor && listLength(keys) < count);
@@ -626,7 +644,7 @@ cleanup:
 }
 
 /*
- * scan
+ * SCAN命令
  *
  * 用于增量迭代当前数据库中的数据库键，需要带cursor调用，
  * 由于每次只返回少量元素，所以不会像keys或smembers命令一样阻塞服务器(可能数秒)
@@ -641,7 +659,7 @@ void scanCommand(redisClient* c) {
 }
 
 /*
- * dbsize
+ * DBSIZE命令
  *
  * 返回当前数据库中key的数量
  */
@@ -650,7 +668,7 @@ void dbsizeCommand(redisClient* c) {
 }
 
 /*
- * lastsave
+ * LASTSAVE命令
  *
  * 以UNIX时间戳格式返回最近一次Redis成功将数据保存到磁盘上的时间
  */
@@ -659,7 +677,7 @@ void lastsaveCommand(redisClient* c) {
 }
 
 /*
- * type
+ * TYPE命令
  *
  * 以字符串的形式返回存储在key中的值的类型
  */
@@ -698,7 +716,7 @@ void typeCommand(redisClient* c) {
 }
 
 /*
- * shutdown
+ * SHUTDOWN命令
  *
  * 如果配置了持久化策略，那么这个命令能够保证在关闭redis服务进程的时候数据不会丢失
  */
@@ -729,13 +747,14 @@ void shutdownCommand(redisClient* c) {
     if (server.loading /* || server.sentinel_mode */)
         flags = (flags & ~REDIS_SHUTDOWN_SAVE) | REDIS_SHUTDOWN_NOSAVE;
 
+    // 调用prepareForshutdown函数，完成持久化操作
     if (prepareForShutdown(flags) == REDIS_OK) exit(0);
 
     addReplyError(c, "Errors trying to SHUTDOWN. Check logs.");
 }
 
 /*
- * rename，renamenx命令的底层实现
+ * RENAME，RENAMENX命令的底层实现
  */
 void renameGenericCommand(redisClient* c, int nx) {
     robj* o;
@@ -777,19 +796,13 @@ void renameGenericCommand(redisClient* c, int nx) {
 
     dbDelete(c->db, c->argv[1]);
 
-    /* signalModifiedKey(c->db, c->argv[1]); */
-    /* signalModifiedKey(c->db, c->argv[2]); */
-
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "rename_from", c->argv[1], c->db->id); */
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "rename_to", c->argv[2], c->db->id); */
-
     server.dirty++;
 
     addReply(c, nx ? shared.cone : shared.ok);
 }
 
 /*
- * rename
+ * RENAME命令
  *
  * 修改key的名字为newkey，如果newkey已经存在，则会执行删除操作(隐式)
  */
@@ -798,7 +811,7 @@ void renameCommand(redisClient* c) {
 }
 
 /*
- * renamenx
+ * RENAMENX命令
  *
  * 修改key的名字为newkey，仅在newkey不存在时进行
  */
@@ -807,7 +820,7 @@ void renamenxCommand(redisClient* c) {
 }
 
 /*
- * move
+ * MOVE命令
  *
  * 将当前数据库的key移动到指定的数据库当中
  */
@@ -817,6 +830,7 @@ void moveCommand(redisClient* c) {
     redisDb* dst;
     int srcid;
 
+    // TODO: 集群相关
     /*
      * if (server.cluster_enabled) {
      *     addReplyError(c, "MOVE is not allowed int cluster mode");
@@ -864,8 +878,10 @@ void moveCommand(redisClient* c) {
 }
 
 /*
- * Expires API
+ * 过期字典相关API
  */
+
+/* Expires API */
 
 /*
  * 移除键key的过期时间，键必须在键空间存在，
@@ -914,7 +930,7 @@ long long getExpire(redisDb* db, robj* key) {
 }
 
 /*
- * 当一个键过期时，向AOF文件传播一个显式的del命令
+ * 当一个键过期时，向附属节点(复制功能相关)和AOF文件传播一个显式的del命令
  */
 void propagateExpire(redisDb* db, robj* key) {
     robj* argv[2];
@@ -924,10 +940,11 @@ void propagateExpire(redisDb* db, robj* key) {
     incrRefCount(argv[0]);
     incrRefCount(argv[1]);
 
-    // propagate to AOF
+    // 传播到AOF文件
     if (server.aof_state != REDIS_AOF_OFF)
         feedAppendOnlyFile(server.delCommand, db->id, argv, 2);
 
+    // 传播到附属节点(复制功能相关)
     /* replicationFeedSlaves(server.slaves, db->id, argv, 2); */
 
     decrRefCount(argv[0]);
@@ -950,6 +967,7 @@ int expireIfNeeded(redisDb* db, robj* key) {
 
     now = /* server.lua_caller ? server.lua_time_start : */ mstime();
 
+    // 复制功能相关，server.masterhost不为NULL说明运行在复制模式下是从属节点: 当服务器运行在replication模式时，...
     /* if (server.masterhost != NULL) return now > when; */
 
     // 有过期时间，但未到期
@@ -960,8 +978,6 @@ int expireIfNeeded(redisDb* db, robj* key) {
 
     // 把删除信息传播到AOF
     propagateExpire(db, key);
-
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_EXPIRED, "expired", key, db->id); */
 
     return dbDelete(db, key);
 }
@@ -995,32 +1011,30 @@ void expireGenericCommand(redisClient* c, long long basetime, int unit) {
         return;
     }
 
+    // 服务器并非正在载入，也不是复制功能的从属节点(是主节点)，而且设置的时间已经过期
     if (when <= mstime() && !server.loading /* && !server.masterhost */) {
         robj* aux;
 
         assert(dbDelete(c->db, key));
         server.dirty++;
 
+        // 传播显式的DEL命令
         /* Replicate/AOF this as an explicit DEL. */
         aux = createStringObject("DEL", 3);
 
+        // 修改客户端的参数数组
         rewriteClientCommandVector(c, 2, aux, key);
         decrRefCount(aux);
-
-        /* signalModifiedKey(c->db, key); */
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", key, c->db->id); */
 
         addReply(c, shared.cone);
 
         return;
+    // 否则，设置键的过期时间
     } else {
 
         setExpire(c->db, key, when);
 
         addReply(c, shared.cone);
-
-        /* signalModifiedKey(c->db, key); */
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "expire", key, c->db->id); */
 
         server.dirty++;
 
@@ -1029,7 +1043,7 @@ void expireGenericCommand(redisClient* c, long long basetime, int unit) {
 }
 
 /*
- * expire
+ * EXPIRE命令
  *
  * 设置过期时间，参数为时间间隔
  */
@@ -1038,7 +1052,7 @@ void expireCommand(redisClient* c) {
 }
 
 /*
- * expireat
+ * EXPIREAT命令
  *
  * 设置过期时间，参数为时间戳
  */
@@ -1084,7 +1098,7 @@ void ttlGenericCommand(redisClient* c, int output_ms) {
 }
 
 /*
- * ttl
+ * TTL命令
  *
  * 返回键的剩余生存时间(s)
  */
@@ -1093,7 +1107,7 @@ void ttlCommand(redisClient* c) {
 }
 
 /*
- * pttl
+ * PTTL命令
  *
  * 返回键的剩余生存时间(ms)
  */
@@ -1102,7 +1116,7 @@ void pttlCommand(redisClient* c) {
 }
 
 /*
- * persist
+ * PERSIST命令
  *
  * 删除给定键的过期时间
  */
@@ -1125,9 +1139,7 @@ void persistCommand(redisClient* c) {
     }
 }
 
-/*
- * API to get key arguments from commands
- */
+/* API to get key arguments from commands */
 
 /* The base case is to use the keys position as given in the command table
  * (firstkey, lastkey, step). */
