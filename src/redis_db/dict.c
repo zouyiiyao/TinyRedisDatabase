@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <sys/time.h>
+#include <ctype.h>
 
 #include "dict.h"
 #include "zmalloc.h"
@@ -107,6 +108,18 @@ unsigned int dictGenHashFunction(const void* key, int len) {
     h ^= h >> 15;
 
     return (unsigned int)h;
+}
+
+/*
+ * 忽略大小写的哈希函数
+ */
+/* And a case insensitive hash function (based on djb hash) */
+unsigned int dictGenCaseHashFunction(const unsigned char *buf, int len) {
+    unsigned int hash = (unsigned int)dict_hash_function_seed;
+
+    while (len--)
+        hash = ((hash << 5) + hash) + (tolower(*buf++)); /* hash * 33 + c */
+    return hash;
 }
 
 /*

@@ -237,11 +237,14 @@ void dictReleaseIterator(dictIterator* iter);
 
 dictEntry* dictGetRandomKey(dict* d);
 unsigned int dictGenHashFunction(const void* key, int len);
+unsigned int dictGenCaseHashFunction(const unsigned char *buf, int len);
 void dictEmpty(dict* d, void(callback)(void*));
 void dictEnableResize(void);
 void dictDisableResize(void);
 int dictRehash(dict* d, int n);
 int dictRehashMilliseconds(dict* d, int ms);
+void dictSetHashFunctionSeed(unsigned int initval);
+unsigned int dictGetHashFunctionSeed(void);
 unsigned long dictScan(dict* d, unsigned long v, dictScanFunction* fn, void* privdata);
 
 #endif //TINY_REDIS_DICT_H
