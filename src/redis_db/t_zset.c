@@ -976,7 +976,6 @@ void zremCommand(redisClient* c) {
     robj* key = c->argv[1];
     robj* zobj;
     int deleted = 0;
-    int keyremoved = 0;
     int j;
 
     if ((zobj = lookupKeyWriteOrReply(c, key, shared.czero)) == NULL || checkType(c, zobj, REDIS_ZSET))
