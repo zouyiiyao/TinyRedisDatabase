@@ -494,11 +494,17 @@ void zsetConvert(robj* zobj, int encoding) {
 }
 
 /*
+ * 注意: 
+ * signalModifiedKey函数与独立功能事务相关，在本代码中删除；
+ * notifyKeyspaceEvent函数与独立功能发布/订阅相关，在本代码中删除；
+ */
+
+/*
  * Sorted set commands
  */
 
 /*
- * ZADD，ZINCRBY底层实现
+ * ZADD，ZINCRBY命令底层实现
  */
 /* This generic command implements both ZADD and ZINCRBY. */
 void zaddGenericCommand(redisClient* c, int incr) {
@@ -655,23 +661,17 @@ void zaddGenericCommand(redisClient* c, int incr) {
 
 cleanup:
     zfree(scores);
-    /*
-     * if (added || updated) {
-     *     signalModifiedKey(c->db, key);
-     *     notifyKeyspaceEvent(REDIS_NOTIFY_ZSET, incr ? "zincr" : "zadd", key, c->db->id);
-     * }
-     */
 }
 
 /*
- * zadd
+ * ZADD命令
  */
 void zaddCommand(redisClient* c) {
     zaddGenericCommand(c, 0);
 }
 
 /*
- * zcard
+ * ZCARD命令
  */
 void zcardCommand(redisClient* c) {
     robj* key = c->argv[1];
@@ -684,7 +684,7 @@ void zcardCommand(redisClient* c) {
 }
 
 /*
- * zcount
+ * ZCOUNT命令
  */
 void zcountCommand(redisClient* c) {
     robj* key = c->argv[1];
@@ -763,7 +763,7 @@ void zcountCommand(redisClient* c) {
 }
 
 /*
- * zrange，zrevrange底层实现
+ * ZRANGE，ZREVRANGE命令底层实现
  */
 void zrangeGenericCommand(redisClient* c, int reverse) {
     robj* key = c->argv[1];
@@ -870,21 +870,21 @@ void zrangeGenericCommand(redisClient* c, int reverse) {
 }
 
 /*
- * zrange
+ * ZRANGE命令
  */
 void zrangeCommand(redisClient* c) {
     zrangeGenericCommand(c, 0);
 }
 
 /*
- * zrevrange
+ * ZREVRANGE命令
  */
 void zrevrangeCommand(redisClient* c) {
     zrangeGenericCommand(c, 1);
 }
 
 /*
- * zrank，zrevrank底层实现
+ * ZRANK，ZREVRANK命令底层实现
  */
 void zrankGenericCommand(redisClient* c, int reverse) {
     robj* key = c->argv[1];
@@ -956,21 +956,21 @@ void zrankGenericCommand(redisClient* c, int reverse) {
 }
 
 /*
- * zrank
+ * ZRANK命令
  */
 void zrankCommand(redisClient* c) {
     zrankGenericCommand(c, 0);
 }
 
 /*
- * zrevrank
+ * ZREVRANK命令
  */
 void zrevrankCommand(redisClient* c) {
     zrankGenericCommand(c, 1);
 }
 
 /*
- * zrem
+ * ZREM命令
  */
 void zremCommand(redisClient* c) {
     robj* key = c->argv[1];
@@ -1031,15 +1031,6 @@ void zremCommand(redisClient* c) {
 
     if (deleted) {
 
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_ZSET, "zrem", key, c->db->id); */
-
-        /*
-         * if (keyremoved)
-         *     notifyKeyspaceEvent(REDIS_NOTIRY_GENERIC, "del", key, c->db->id);
-         */
-
-        /* signalModifiedKey(c->db, key); */
-
         server.dirty += deleted;
     }
 
@@ -1047,7 +1038,7 @@ void zremCommand(redisClient* c) {
 }
 
 /*
- * zscore
+ * ZSCORE命令
  */
 void zscoreCommand(redisClient* c) {
     robj* key = c->argv[1];
