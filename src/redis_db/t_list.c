@@ -333,22 +333,30 @@ void listTypeConvert(robj* subject, int enc) {
 }
 
 /*
+ * 注意: 
+ * signalModifiedKey函数与独立功能事务相关，在本代码中删除；
+ * notifyKeyspaceEvent函数与独立功能发布/订阅相关，在本代码中删除；
+ */
+
+/*
  * List Commands
  */
 
 /*
- * lpush，rpush的底层实现
+ * LPUSH，RPUSH命令的底层实现
  *
  * 如果列表对象不存在，则创建一个新的列表对象，插入到数据库的键空间
  */
 void pushGenericCommand(redisClient* c, int where) {
 
     int j;
+    // 阻塞相关
     /* int waiting = 0; */
     int pushed = 0;
 
     robj* lobj = lookupKeyWrite(c->db, c->argv[1]);
 
+    // 阻塞相关
     /* int may_have_waiting_clients = (lobj == NULL); */
 
     if (lobj && lobj->type != REDIS_LIST) {
@@ -356,6 +364,7 @@ void pushGenericCommand(redisClient* c, int where) {
         return;
     }
 
+    // 阻塞相关
     /* if (may_have_waiting_clients) signalListAsReady(c, c->argv[1]); */
 
     for (j = 2; j < c->argc; j++) {
@@ -373,35 +382,25 @@ void pushGenericCommand(redisClient* c, int where) {
 
     addReplyLongLong(c, /* waiting + */ (lobj ? listTypeLength(lobj) : 0));
 
-    /*
-     * if (pushed) {
-     *     char* event = (where == REDIS_HEAD) ? "lpush" : "rpush";
-     *
-     *     signalModifiedKey(c->db, c->argv[1]);
-     *
-     *     notifyKeyspaceEvent(REDIS_NOTIFY_LIST, event, c->argv[1], c->db->id);
-     * }
-     */
-
     server.dirty += pushed;
 }
 
 /*
- * lpush
+ * LPUSH命令
  */
 void lpushCommand(redisClient* c) {
     pushGenericCommand(c, REDIS_HEAD);
 }
 
 /*
- * rpush
+ * RPUSH命令
  */
 void rpushCommand(redisClient* c) {
     pushGenericCommand(c, REDIS_TAIL);
 }
 
 /*
- * lpushx，rpushx，linsert的底层实现
+ * LPUSHX，RPUSHX，LINSERT的底层实现
  *
  * 如果列表对象不存在，则什么也不做
  */
@@ -441,10 +440,6 @@ void pushxGenericCommand(redisClient* c, robj* refval, robj* val, int where) {
                 ziplistLen(subject->ptr) > server.list_max_ziplist_entries)
                 listTypeConvert(subject, REDIS_ENCODING_LINKEDLIST);
 
-            /* signalModifiedKey(c->db, c->argv[1]); */
-
-            /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "linsert", c->argv[1], c->db->id); */
-
             server.dirty++;
         } else {
             /* Notify client of a failed insert */
@@ -454,13 +449,8 @@ void pushxGenericCommand(redisClient* c, robj* refval, robj* val, int where) {
 
     // LPUSHX or RPUSHX
     } else {
-        /* char* event = (where == REDIS_HEAD) ? "lpush" : "rpush"; */
 
         listTypePush(subject, val, where);
-
-        /* signalModifiedKey(c->db, c->argv[1]); */
-
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, event, c->argv[1], c->db->id); */
 
         server.dirty++;
     }
@@ -469,7 +459,7 @@ void pushxGenericCommand(redisClient* c, robj* refval, robj* val, int where) {
 }
 
 /*
- * lpushx
+ * LPUSHX命令
  */
 void lpushxCommand(redisClient* c) {
     c->argv[2] = tryObjectEncoding(c->argv[2]);
@@ -477,7 +467,7 @@ void lpushxCommand(redisClient* c) {
 }
 
 /*
- * rpushx
+ * RPUSHX命令
  */
 void rpushxCommand(redisClient* c) {
     c->argv[2] = tryObjectEncoding(c->argv[2]);
@@ -485,7 +475,7 @@ void rpushxCommand(redisClient* c) {
 }
 
 /*
- * linsert
+ * LINSERT命令
  */
 void linsertCommand(redisClient* c) {
 
@@ -503,7 +493,7 @@ void linsertCommand(redisClient* c) {
 }
 
 /*
- * lpop，rpop的底层实现
+ * LPOP，RPOP命令的底层实现
  */
 void popGenericCommand(redisClient* c, int where) {
 
@@ -516,39 +506,34 @@ void popGenericCommand(redisClient* c, int where) {
     if (value == NULL) {
         addReply(c, shared.nullbulk);
     } else {
-        /* char* event = (where == REDIS_HEAD) ? "lpop" : "rpop"; */
 
         addReplyBulk(c, value);
         decrRefCount(value);
 
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, event, c->argv[1], c->db->id); */
-
         if (listTypeLength(o) == 0) {
-            /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id); */
             dbDelete(c->db, c->argv[1]);
         }
 
-        /* signalModifiedKey(c->db, c->argv[1]); */
         server.dirty++;
     }
 }
 
 /*
- * lpop
+ * LPOP命令
  */
 void lpopCommand(redisClient* c) {
     popGenericCommand(c, REDIS_HEAD);
 }
 
 /*
- * rpop
+ * RPOP命令
  */
 void rpopCommand(redisClient* c) {
     popGenericCommand(c, REDIS_TAIL);
 }
 
 /*
- * llen
+ * LLEN命令
  */
 void llenCommand(redisClient* c) {
 
@@ -560,7 +545,7 @@ void llenCommand(redisClient* c) {
 }
 
 /*
- * lindex
+ * LINDEX命令
  */
 void lindexCommand(redisClient* c) {
 
@@ -609,7 +594,7 @@ void lindexCommand(redisClient* c) {
 }
 
 /*
- * lrem
+ * LREM命令
  */
 void lremCommand(redisClient* c) {
 
@@ -654,15 +639,14 @@ void lremCommand(redisClient* c) {
     if (subject->encoding == REDIS_ENCODING_ZIPLIST)
         decrRefCount(obj);
 
+    // 删除空列表对象
     if (listTypeLength(subject) == 0) dbDelete(c->db, c->argv[1]);
 
     addReplyLongLong(c, removed);
-
-    /* if (removed) signalModifiedKey(c->db, c->argv[1]); */
 }
 
 /*
- * ltrim
+ * LTRIM命令
  */
 void ltrimCommand(redisClient* c) {
 
@@ -701,6 +685,7 @@ void ltrimCommand(redisClient* c) {
         rtrim = llen - end - 1;
     }
 
+    // 删除两端元素
     /* Remove list elements to perform the trim */
     if (o->encoding == REDIS_ENCODING_ZIPLIST) {
 
@@ -721,14 +706,9 @@ void ltrimCommand(redisClient* c) {
         exit(1);
     }
 
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "ltrim", c->argv[1], c->db->id); */
-
     if (listTypeLength(o) == 0) {
         dbDelete(c->db, c->argv[1]);
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id); */
     }
-
-    /* signalModifiedKey(c->db, c->argv[1]); */
 
     server.dirty++;
 
@@ -736,7 +716,7 @@ void ltrimCommand(redisClient* c) {
 }
 
 /*
- * lset
+ * LSET命令
  */
 void lsetCommand(redisClient* c) {
 
@@ -745,11 +725,14 @@ void lsetCommand(redisClient* c) {
     if (o == NULL || checkType(c, o, REDIS_LIST)) return;
     long index;
 
+    // 取value
     robj* value = (c->argv[3] = tryObjectEncoding(c->argv[3]));
 
+    // 取index
     if (getLongFromObjectOrReply(c, c->argv[2], &index, NULL) != REDIS_OK)
         return;
 
+    // 查看保存value值对象是否需要转换列表的底层编码
     listTypeTryConversion(o, value);
 
     if (o->encoding == REDIS_ENCODING_ZIPLIST) {
@@ -768,9 +751,6 @@ void lsetCommand(redisClient* c) {
 
             addReply(c, shared.ok);
 
-            /* signalModifiedKey(c->db, c->argv[1]); */
-            /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "lset", c->argv[1], c->db->id); */
-
             server.dirty++;
         }
 
@@ -786,9 +766,6 @@ void lsetCommand(redisClient* c) {
             incrRefCount(value);
 
             addReply(c, shared.ok);
-
-            /* signalModifiedKey(c->db, c->argv[1]); */
-            /* notifyKeyspaceEvent(REDIS_NOTIFY_LIST, "lset", c->argv[1], c->db->id); */
 
             server.dirty++;
         }
