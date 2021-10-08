@@ -14,6 +14,7 @@
 #define SDS_MAX_PREALLOC (1024 * 1024)
 
 #include <sys/types.h>
+#include <stdarg.h>
 
 typedef char* sds;
 
@@ -94,6 +95,16 @@ void sdsclear(sds s);
 sds sdsfromlonglong(long long value);
 
 /* Low level functions exposed to the user API */
+sds sdsMakeRoomFor(sds s, size_t addlen);
+void sdsIncrLen(sds s, int incr);
 sds sdsRemoveFreeSpace(sds s);
+
+sds sdscatvprintf(sds s, const char* fmt, va_list ap);
+sds sdscatprintf(sds s, const char* fmt, ...);
+sds sdscatfmt(sds s, char const *fmt, ...);
+sds sdscatrepr(sds s, const char *p, size_t len);
+
+void sdsrange(sds s, int start, int end);
+sds *sdssplitargs(const char *line, int *argc);
 
 #endif //TINY_REDIS_SDS_H
