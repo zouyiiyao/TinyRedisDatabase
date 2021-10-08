@@ -455,6 +455,12 @@ void hashTypeConvert(robj* o, int enc) {
 }
 
 /*
+ * 注意: 
+ * signalModifiedKey函数与独立功能事务相关，在本代码中删除；
+ * notifyKeyspaceEvent函数与独立功能发布/订阅相关，在本代码中删除；
+ */
+
+/*
  * Hash Commands
  */
 
@@ -476,7 +482,7 @@ robj* hashTypeLookupWriteOrCreate(redisClient* c, robj* key) {
 }
 
 /*
- * hset
+ * HSET命令
  *
  * 如果哈希值对象不存在，则创建一个新的哈希值对象
  */
@@ -487,6 +493,7 @@ void hsetCommand(redisClient* c) {
 
     if ((o = hashTypeLookupWriteOrCreate(c, c->argv[1])) == NULL) return;
 
+    // 如果需要的话，转换哈希对象的底层编码
     hashTypeTryConversion(o, c->argv, 2, 3);
 
     hashTypeTryObjectEncoding(o, &c->argv[2], &c->argv[3]);
@@ -495,15 +502,11 @@ void hsetCommand(redisClient* c) {
 
     addReply(c, update ? shared.czero : shared.cone);
 
-    /* signalModifiedKey(c->db, c->argv[1]); */
-
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_HASH, "hset", c->argv[1], c->db->id); */
-
     server.dirty++;
 }
 
 /*
- * hsetnx
+ * HSETNX命令
  */
 void hsetnxCommand(redisClient* c) {
 
@@ -511,6 +514,7 @@ void hsetnxCommand(redisClient* c) {
 
     if ((o = hashTypeLookupWriteOrCreate(c, c->argv[1])) == NULL) return;
 
+    // 如果需要的话，转换哈希对象的底层编码
     hashTypeTryConversion(o, c->argv, 2, 3);
 
     if (hashTypeExists(o, c->argv[2])) {
@@ -521,10 +525,6 @@ void hsetnxCommand(redisClient* c) {
         hashTypeSet(o, c->argv[2], c->argv[3]);
 
         addReply(c, shared.cone);
-
-        /* signalModifiedKey(c->db, c->argv[1]); */
-
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_HASH, "hset", c->argv[1], c->db->id); */
 
         server.dirty++;
     }
@@ -574,7 +574,7 @@ static void addHashFieldToReply(redisClient* c, robj* o, robj* field) {
 }
 
 /*
- * hget
+ * HGET命令
  */
 void hgetCommand(redisClient* c) {
     robj* o;
@@ -586,7 +586,7 @@ void hgetCommand(redisClient* c) {
 }
 
 /*
- * hexists
+ * HEXISTS命令
  */
 void hexistsCommand(redisClient* c) {
     robj* o;
@@ -598,13 +598,12 @@ void hexistsCommand(redisClient* c) {
 }
 
 /*
- * hdel
+ * HDEL命令
  */
 void hdelCommand(redisClient* c) {
     robj* o;
     int j;
     int deleted = 0;
-    /* int keyremoved = 0; */
 
     if ((o = lookupKeyWriteOrReply(c, c->argv[1], shared.czero)) == NULL || checkType(c, o, REDIS_HASH))
         return;
@@ -616,21 +615,12 @@ void hdelCommand(redisClient* c) {
 
             if (hashTypeLength(o) == 0) {
                 dbDelete(c->db, c->argv[1]);
-                /* keyremoved = 1; */
                 break;
             }
         }
     }
 
     if (deleted) {
-
-        /* signalModifiedKey(c->db, c->argv[1]); */
-
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_HASH, "hdel", c->argv[1], c->db->id); */
-
-        /* if (keyremoved)
-         *     notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id);
-         */
 
         server.dirty += deleted;
     }
@@ -639,7 +629,7 @@ void hdelCommand(redisClient* c) {
 }
 
 /*
- * hlen
+ * HLEN命令
  */
 void hlenCommand(redisClient* c) {
     robj* o;
@@ -677,7 +667,7 @@ static void addHashIteratorCursorToReply(redisClient* c, hashTypeIterator* hi, i
 }
 
 /*
- * hgetall的底层实现
+ * HGETALL命令的底层实现
  */
 void genericHgetallCommand(redisClient* c, int flags) {
     robj* o;
@@ -713,7 +703,7 @@ void genericHgetallCommand(redisClient* c, int flags) {
 }
 
 /*
- * hgetall
+ * HGETALL命令
  * 
  * 返回存储在key中的哈希值对象中所有键值对
  */
