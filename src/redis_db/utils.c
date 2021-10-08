@@ -6,9 +6,17 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <ctype.h>
+#include <unistd.h>
+#include <float.h>
 
 #include "utils.h"
 
+/*
+ * 通配符模式匹配，nocase为1则忽略大小写
+ */
 /* Glob-style pattern matching. */
 int stringmatchlen(const char *pattern, int patternLen,
                    const char *string, int stringLen, int nocase)
@@ -23,6 +31,7 @@ int stringmatchlen(const char *pattern, int patternLen,
                 if (patternLen == 1)
                     return 1; /* match */
                 while(stringLen) {
+                    // 递归调用
                     if (stringmatchlen(pattern+1, patternLen-1,
                                        string, stringLen, nocase))
                         return 1; /* match */
@@ -104,11 +113,14 @@ int stringmatchlen(const char *pattern, int patternLen,
                     pattern++;
                     patternLen--;
                 }
+                // 继续执行default
                 /* fall through */
             default:
+                // 不忽略大小写，比对单个字符
                 if (!nocase) {
                     if (pattern[0] != string[0])
                         return 0; /* no match */
+                // 忽略大小写，转为小写再比对单个字符
                 } else {
                     if (tolower((int)pattern[0]) != tolower((int)string[0]))
                         return 0; /* no match */
@@ -127,8 +139,10 @@ int stringmatchlen(const char *pattern, int patternLen,
             break;
         }
     }
+    // 匹配
     if (patternLen == 0 && stringLen == 0)
         return 1;
+    // 不匹配
     return 0;
 }
 
@@ -136,6 +150,10 @@ int stringmatch(const char *pattern, const char *string, int nocase) {
     return stringmatchlen(pattern,strlen(pattern),string,strlen(string),nocase);
 }
 
+/*
+ * 将long long转为string，返回字符串表示该long long数值需要的字符数，
+ * 结果存放在缓冲区s中，len指示了缓冲区大小
+ */
 /* Convert a long long into a string. Returns the number of
  * characters needed to represent the number, that can be shorter if passed
  * buffer length is not enough to store the whole number. */
@@ -160,6 +178,10 @@ int ll2string(char *s, size_t len, long long value) {
     return l;
 }
 
+/*
+ * 将string转为long long，
+ * 如果能够转为无溢出long long，则返回1；否则返回0；
+ */
 /* Convert a string into a long long. Returns 1 if the string could be parsed
  * into a (non-overflowing) long long, 0 otherwise. The value will be set to
  * the parsed value when appropriate. */
@@ -226,6 +248,11 @@ int string2ll(const char *s, size_t slen, long long *value) {
     return 1;
 }
 
+
+/*
+ * 将string转为long，
+ * 如果能够转为无溢出long，则返回1；否则返回0；
+ */
 /* Convert a string into a long. Returns 1 if the string could be parsed into a
  * (non-overflowing) long, 0 otherwise. The value will be set to the parsed
  * value when appropriate. */
@@ -242,6 +269,9 @@ int string2l(const char *s, size_t slen, long *lval) {
     return 1;
 }
 
+/*
+ * 将double转为string，返回字符串表示该double数值需要的字符数
+ */
 /* Convert a double to a string representation. Returns the number of bytes
  * required. The representation should always be parsable by stdtod(3). */
 int d2string(char *buf, size_t len, double value) {
@@ -279,4 +309,53 @@ int d2string(char *buf, size_t len, double value) {
     }
 
     return len;
+}
+
+/*
+ * 对每一个运行的redis服务器实例，生成唯一的运行时id
+ */
+/* Generate the Redis "Run ID", a SHA1-sized random number that identifies a
+ * given execution of Redis, so that if you are talking with an instance
+ * having run_id == A, and you reconnect and it has run_id == B, you can be
+ * sure that it is either a different instance or it was restarted. */
+void getRandomHexChars(char *p, unsigned int len) {
+    FILE *fp = fopen("/dev/urandom","r");
+    char *charset = "0123456789abcdef";
+    unsigned int j;
+
+    if (fp == NULL || fread(p,len,1,fp) == 0) {
+        /* If we can't read from /dev/urandom, do some reasonable effort
+         * in order to create some entropy, since this function is used to
+         * generate run_id and cluster instance IDs */
+        char *x = p;
+        unsigned int l = len;
+        struct timeval tv;
+        pid_t pid = getpid();
+
+        /* Use time and PID to fill the initial array. */
+        gettimeofday(&tv,NULL);
+        if (l >= sizeof(tv.tv_usec)) {
+            memcpy(x,&tv.tv_usec,sizeof(tv.tv_usec));
+            l -= sizeof(tv.tv_usec);
+            x += sizeof(tv.tv_usec);
+        }
+        if (l >= sizeof(tv.tv_sec)) {
+            memcpy(x,&tv.tv_sec,sizeof(tv.tv_sec));
+            l -= sizeof(tv.tv_sec);
+            x += sizeof(tv.tv_sec);
+        }
+        if (l >= sizeof(pid)) {
+            memcpy(x,&pid,sizeof(pid));
+            l -= sizeof(pid);
+            x += sizeof(pid);
+        }
+        /* Finally xor it with rand() output, that was already seeded with
+         * time() at startup. */
+        for (j = 0; j < len; j++)
+            p[j] ^= rand();
+    }
+    /* Turn it into hex digits taking just 4 bits out of 8 for every byte. */
+    for (j = 0; j < len; j++)
+        p[j] = charset[p[j] & 0x0F];
+    if (fp) fclose(fp);
 }

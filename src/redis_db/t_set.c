@@ -958,7 +958,7 @@ void spopCommand(redisClient* c) {
     aux = createStringObject("SREM", 4);
     rewriteClientCommandVector(c, 3, aux, c->argv[1], ele);
     /*
-     * 这里3.0版本源代码是有问题的，不应该在这里释放ele
+     * BUG: 这里3.0版本源代码是有问题的，不应该在这里释放ele
      *
      * decrRefCount(ele);
      */
