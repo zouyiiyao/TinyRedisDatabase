@@ -243,12 +243,19 @@ void setTypeConvert(robj* setobj, int enc) {
     }
 }
 
+
+/*
+ * 注意: 
+ * signalModifiedKey函数与独立功能事务相关，在本代码中删除；
+ * notifyKeyspaceEvent函数与独立功能发布/订阅相关，在本代码中删除；
+ */
+
 /*
  * Set Commands
  */
 
 /*
- * sadd
+ * SADD命令
  */
 void saddCommand(redisClient* c) {
     robj* set;
@@ -272,26 +279,18 @@ void saddCommand(redisClient* c) {
         if (setTypeAdd(set, c->argv[j])) added++;
     }
 
-    /*
-     * if (added) {
-     *     signalModifiedKey(c->db, c->argv[1]);
-     *     notifyKeyspaceEvent(REDIS_NOTIFY_SET, "sadd", c->argv[1], c->db->id);
-     * }
-     */
-
     server.dirty += added;
 
     addReplyLongLong(c, added);
 }
 
 /*
- * srem
+ * SREM命令
  */
 void sremCommand(redisClient* c) {
     robj* set;
     int j;
     int deleted = 0;
-    /* int keyremoved = 0; */
 
     if ((set = lookupKeyWriteOrReply(c, c->argv[1], shared.czero)) == NULL || checkType(c, set, REDIS_SET))
         return;
@@ -309,13 +308,6 @@ void sremCommand(redisClient* c) {
     }
 
     if (deleted) {
-        /* signalModifiedKey(c->db, c->argv[1]); */
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_SET, "srem", c->argv[1], c->db->id); */
-
-        /*
-         * if (keyremoved)
-         *     notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id);
-         */
 
         server.dirty += deleted;
     }
@@ -324,7 +316,7 @@ void sremCommand(redisClient* c) {
 }
 
 /*
- * scard
+ * SCARD命令
  */
 void scardCommand(redisClient* c) {
     robj* o;
@@ -336,7 +328,7 @@ void scardCommand(redisClient* c) {
 }
 
 /*
- * sismember
+ * SISMEMBER命令
  */
 void sismemberCommand(redisClient* c) {
     robj* set;
@@ -369,7 +361,7 @@ int qsortCompareSetByRevCardinality(const void* s1, const void* s2) {
 }
 
 /*
- * sinter，sinterstore底层实现
+ * SINTER，SINTERSTORE命令底层实现
  */
 void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, robj* dstkey) {
 
@@ -392,7 +384,6 @@ void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, 
             zfree(sets);
             if (dstkey) {
                 if (dbDelete(c->db, dstkey)) {
-                    /* signalModifiedKey(c->db, dstkey); */
                     server.dirty++;
                 }
                 addReply(c, shared.czero);
@@ -410,6 +401,7 @@ void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, 
         sets[j] = setobj;
     }
 
+    // 按基数对所有集合进行排序，以提升算法效率
     /* Sort sets from the smallest to largest, this will improve our
      * algorithm's performance */
     qsort(sets, setnum, sizeof(robj*), qsortCompareSetsByCardinality);
@@ -503,17 +495,10 @@ void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, 
         if (setTypeSize(dstset) > 0) {
             dbAdd(c->db, dstkey, dstset);
             addReplyLongLong(c, setTypeSize(dstset));
-            /* notifyKeyspaceEvent(REDIS_NOTIFY_SET, "sinterstore", dstkey, c->db->id); */
         } else {
             decrRefCount(dstset);
             addReply(c, shared.czero);
-            /*
-             * if (deleted)
-             *     notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", dstkey, c->db->id);
-             */
         }
-
-        /* signalModifiedKey(c->db, dstkey); */
 
         server.dirty++;
 
@@ -526,7 +511,7 @@ void sinterGenericCommand(redisClient* c, robj** setkeys, unsigned long setnum, 
 }
 
 /*
- * sinter
+ * SINTER命令
  */
 void sinterCommand(redisClient* c) {
     sinterGenericCommand(c, c->argv + 1, c->argc - 1, NULL);
@@ -540,7 +525,7 @@ void sinterCommand(redisClient* c) {
 #define REDIS_OP_INTER 2
 
 /*
- * sdiff，sdiffstore，sunion，sunionstore底层实现
+ * SDIFF，SDIFFSTORE，SUNION，SUNIONSTORE命令底层实现
  */
 void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* dstkey, int op) {
 
@@ -708,20 +693,11 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
             dbAdd(c->db, dstkey, dstset);
             addReplyLongLong(c, setTypeSize(dstset));
 
-            /* notifyKeyspaceEvent(REDIS_NOTIFY_SET, op == REDIS_OP_UNION ? "sunionstore" : "sdiffstore", dstkey, c->db->id); */
-
         // 结果集为空
         } else {
             decrRefCount(dstset);
             addReply(c, shared.czero);
-
-            /*
-             * if (deleted)
-             *     notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", dstkey, c->db->id);
-             */
         }
-
-        /* signalModifiedKey(c->db, dstkey); */
 
         server.dirty++;
     }
@@ -730,14 +706,14 @@ void sunionDiffGenericCommand(redisClient* c, robj** setkeys, int setnum, robj* 
 }
 
 /*
- * sunion
+ * SUNION命令
  */
 void sunionCommand(redisClient* c) {
     sunionDiffGenericCommand(c, c->argv + 1, c->argc - 1, NULL, REDIS_OP_UNION);
 }
 
 /*
- * sdiff
+ * SDIFF命令
  */
 void sdiffCommand(redisClient* c) {
     sunionDiffGenericCommand(c, c->argv + 1, c->argc - 1, NULL, REDIS_OP_DIFF);
@@ -745,7 +721,7 @@ void sdiffCommand(redisClient* c) {
 
 
 /*
- * srandmember带count参数时的底层实现
+ * SRANDMEMBER命令带count参数时的底层实现
  */
 /* How many times bigger should be the set compared to the requested size
  * for us to don't use the "remove elements" strategy? Read later in the
@@ -902,7 +878,7 @@ void srandmemberWithCountCommand(redisClient* c) {
 }
 
 /*
- * srandmember
+ * SRANDMEMBER命令
  */
 void srandmemberCommand(redisClient* c) {
     robj* set;
@@ -930,7 +906,7 @@ void srandmemberCommand(redisClient* c) {
 }
 
 /*
- * spop
+ * SPOP命令
  */
 void spopCommand(redisClient* c) {
     robj* set;
@@ -952,8 +928,6 @@ void spopCommand(redisClient* c) {
         setTypeRemove(set, ele);
     }
 
-    /* notifyKeyspaceEvent(REDIS_NOTIFY_SET, "spop", c->argv[1], c->db->id); */
-
     /* Replicate/AOF this command as an SREM operation */
     aux = createStringObject("SREM", 4);
     rewriteClientCommandVector(c, 3, aux, c->argv[1], ele);
@@ -970,10 +944,7 @@ void spopCommand(redisClient* c) {
 
     if (setTypeSize(set) == 0) {
         dbDelete(c->db, c->argv[1]);
-        /* notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC, "del", c->argv[1], c->db->id); */
     }
-
-    /* signalModifiedKey(c->db, c->argv[1]); */
 
     server.dirty++;
 }
