@@ -181,7 +181,7 @@ int anetResolve(char* err, char* host, char* ipbuf, size_t ipbuf_len) {
     return anetGenericResolve(err, host, ipbuf, ipbuf_len, ANET_NONE);
 }
 
-int anetResolveIP(char* err, char* host, char* ipbuf, size_T ipbuf_len) {
+int anetResolveIP(char* err, char* host, char* ipbuf, size_t ipbuf_len) {
     return anetGenericResolve(err, host, ipbuf, ipbuf_len, ANET_IP_ONLY);
 }
 
@@ -503,6 +503,7 @@ static int anetGenericAccept(char* err, int s, struct sockaddr* sa, socklen_t* l
 
 /*
  * TCP accept
+ * accept函数的封装，由redis的连接应答处理器acceptTcpHandler调用
  */
 int anetTcpAccept(char* err, int s, char* ip, size_t ip_len, int* port) {
     int fd;
