@@ -5,6 +5,8 @@
 #ifndef TINYREDISDATABASE_AE_H
 #define TINYREDISDATABASE_AE_H
 
+#include <time.h>
+
 /*
  * 事件执行状态
  */
@@ -63,7 +65,7 @@ typedef struct aeFileEvent {
     // 写事件处理器
     aeFileProc* wfileProc;
 
-    // 多路复用库的私有数据
+    // 文件事件的私有数据
     void* clientData;
 
 } aeFileEvent;
@@ -88,7 +90,7 @@ typedef struct aeTimeEvent {
     // 时间事件释放函数
     aeEventFinalizerProc* finalizerProc;
 
-    // 多路复用库的私有数据
+    // 时间事件的私有数据
     void* clientData;
 
     // 指向下一个时间事件结构，形成链表
@@ -101,7 +103,7 @@ typedef struct aeTimeEvent {
  */
 typedef struct aeFiredEvent {
 
-    // 已就绪文件描述符
+    // 已就绪文件描述符，通过这个值来索引文件事件数组
     int fd;
 
     // 事件类型掩码，值可以是AE_READABLE或AE_WRITABLE或AE_READABLE|AE_WRITABLE
@@ -138,7 +140,7 @@ typedef struct aeEventLoop {
     // 事件处理器开关
     int stop;
 
-    // 多路复用库的私有数据
+    // 多路复用库的特有数据
     void* apidata;    /* This is used for polling API specific data */
 
     // 在处理事件前要执行的函数

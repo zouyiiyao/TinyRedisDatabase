@@ -18,7 +18,7 @@
  */
 
 /*
- * 创建并初始化事件处理器状态
+ * 创建并初始化事件处理器状态，参数setsize指定事件槽大小
  */
 aeEventLoop* aeCreateEventLoop(int setsize) {
 
@@ -34,16 +34,23 @@ aeEventLoop* aeCreateEventLoop(int setsize) {
     if (eventLoop->events == NULL || eventLoop->fired == NULL) goto err;
     // 设置数组大小
     eventLoop->setsize = setsize;
-    eventLoop->lastTime = time(NULL);
 
+    // 设置最后一次处理时间事件的时间
+    eventLoop->lastTime = time(NULL);
     // 初始化时间事件结构
     eventLoop->timeEventHead= NULL;
     // 时间事件id从0开始
     eventLoop->timeEventNextId = 0;
 
+    // 事件处理器开关
     eventLoop->stop = 0;
+
     eventLoop->maxfd = -1;
+
+    // 在处理事件之前需要执行的函数
     eventLoop->beforesleep = NULL;
+
+    // 创建多路复用库的特有数据
     if (aeApiCreate(eventLoop) == -1) goto err;
 
     // 初始化监听事件类型
@@ -131,15 +138,19 @@ int aeCreateFileEvent(aeEventLoop* eventLoop, int fd, int mask, aeFileProc* proc
 
     if (fd >= eventLoop->setsize) return AE_ERR;
 
-    aeFileEvent* fe = eventLoop->events[fd];
+    // fd作为索引找到对应的文件事件
+    aeFileEvent* fe = &eventLoop->events[fd];
 
+    // 监听指定fd的指定事件类型
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)
         return AE_ERR;
 
+    // 设置文件事件类型，以及事件处理器
     fe->mask |= mask;
     if (mask & AE_READABLE) fe->rfileProc = proc;
     if (mask & AE_WRITABLE) fe->wfileProc = proc;
 
+    // 设置文件事件私有数据: 如redisClient*，NULL，...
     fe->clientData = clientData;
 
     if (fd > eventLoop->maxfd)
@@ -159,7 +170,7 @@ void aeDeleteFileEvent(aeEventLoop* eventLoop, int fd, int mask) {
 
     if (fe->mask == AE_NONE) return;
 
-    fe->mask = fd->mask & (~mask);
+    fe->mask = fe->mask & (~mask);
     if (fd == eventLoop->maxfd && fe->mask == AE_NONE) {
         /* Update the max fd */
         int j;
@@ -239,7 +250,7 @@ long long aeCreateTimeEvent(aeEventLoop* eventLoop, long long milliseconds, aeTi
     te->timeProc = proc;
     // 设置时间事件释放函数
     te->finalizerProc = finalizerProc;
-    // 设置多路复用库的私有数据
+    // 设置时间事件的私有数据
     te->clientData = clientData;
     // 将新时间事件插入表头，redis的时间事件列表是非按时间排序的
     te->next = eventLoop->timeEventHead;
@@ -270,7 +281,7 @@ int aeDeleteTimeEvent(aeEventLoop* eventLoop, long long id) {
             else
                 prev->next = te->next;
 
-            // 执行时间事件释放函数
+            // 执行时间事件释放函数，使用时间事件的私有数据
             if (te->finalizerProc)
                 te->finalizerProc(eventLoop, te->clientData);
 
@@ -491,6 +502,7 @@ int aeProcessEvents(aeEventLoop* eventLoop, int flags) {
         }
 
         // 执行文件事件，阻塞时间由tvp指出
+        /* 调用aeApiPoll函数得到就绪事件数组 */
         numevents = aeApiPoll(eventLoop, tvp);
         for (j = 0; j < numevents; j++) {
             // 从已就绪文件事件数组中获取文件事件 
@@ -560,13 +572,14 @@ void aeMain(aeEventLoop* eventLoop) {
 
     eventLoop->stop = 0;
 
+    // 一直处理事件，直到事件处理器状态变为停止
     while (!eventLoop->stop) {
 
         // 如果有需要在处理事件之前执行的函数，则执行它
         if (eventLoop->beforesleep != NULL)
             eventLoop->beforesleep(eventLoop);
 
-        // 开始处理事件
+        // 开始处理一轮事件(所有类型)
         aeProcessEvents(eventLoop, AE_ALL_EVENTS);
     }
 }
