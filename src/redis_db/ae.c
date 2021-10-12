@@ -482,7 +482,7 @@ int aeProcessEvents(aeEventLoop* eventLoop, int flags) {
                 tvp->tv_usec = (shortest->when_ms - now_ms) * 1000;
             }
 
-            // 时间差小于0，说明时间事件已经可以执行，设置处理文件事件不阻塞
+            // 时间差小于0，说明时间事件已经可以执行
             if (tvp->tv_sec < 0) tvp->tv_sec = 0;
             if (tvp->tv_usec < 0) tvp->tv_usec = 0;
         } else {
