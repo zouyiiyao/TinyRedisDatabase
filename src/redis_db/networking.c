@@ -1636,9 +1636,11 @@ sds catClientInfoString(sds s, redisClient *client) {
                      (long long)(server.unixtime - client->lastinteraction),
                      flags,
                      client->db->id,
-                     (int) dictSize(client->pubsub_channels),
-                     (int) listLength(client->pubsub_patterns),
-                     (client->flags & REDIS_MULTI) ? client->mstate.count : -1,
+                     // TODO: 发布/订阅相关
+                     /* (int) dictSize(client->pubsub_channels) */ -1,
+                     /* (int) listLength(client->pubsub_patterns) */ -1,
+                     // TODO: 事务相关
+                     /* (client->flags & REDIS_MULTI) ? client->mstate.count : -1 */ -1,
                      (unsigned long long) sdslen(client->querybuf),
                      (unsigned long long) sdsavail(client->querybuf),
                      (unsigned long long) client->bufpos,
@@ -1858,9 +1860,11 @@ unsigned long getClientOutputBufferMemoryUsage(redisClient *c) {
  *                                    正在进行订阅操作（SUBSCRIBE/PSUBSCRIBE）的客户端
  */
 int getClientLimitClass(redisClient *c) {
-    if (c->flags & REDIS_SLAVE) return REDIS_CLIENT_LIMIT_CLASS_SLAVE;
-    if (dictSize(c->pubsub_channels) || listLength(c->pubsub_patterns))
-        return REDIS_CLIENT_LIMIT_CLASS_PUBSUB;
+    // TODO: 复制相关
+    /* if (c->flags & REDIS_SLAVE) return REDIS_CLIENT_LIMIT_CLASS_SLAVE; */
+    // TODO: 发布/订阅相关
+    /* if (dictSize(c->pubsub_channels) || listLength(c->pubsub_patterns)) */
+    /*     return REDIS_CLIENT_LIMIT_CLASS_PUBSUB; */
     return REDIS_CLIENT_LIMIT_CLASS_NORMAL;
 }
 
