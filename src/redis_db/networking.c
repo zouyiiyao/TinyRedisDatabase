@@ -30,18 +30,11 @@ size_t getStringObjectSdsUseMemory(robj* o) {
 }
 
 /*
- * ...
+ * 回复链表的节点复制函数
  */
 void* dupClientReplyValue(void* o) {
     incrRefCount((robj*)o);
     return o;
-}
-
-/*
- * ...
- */
-int listMatchObjects(void* a, void* b) {
-    return equalStringObjects(a, b);
 }
 
 /*
