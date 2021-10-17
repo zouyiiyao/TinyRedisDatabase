@@ -98,6 +98,7 @@ sds sdsfromlonglong(long long value);
 sds sdsMakeRoomFor(sds s, size_t addlen);
 void sdsIncrLen(sds s, int incr);
 sds sdsRemoveFreeSpace(sds s);
+size_t sdsAllocSize(sds s)
 
 sds sdscatvprintf(sds s, const char* fmt, va_list ap);
 sds sdscatprintf(sds s, const char* fmt, ...);

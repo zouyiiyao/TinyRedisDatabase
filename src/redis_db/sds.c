@@ -293,6 +293,25 @@ sds sdsfromlonglong(long long value) {
     return sdsnewlen(buf, len);
 }
 
+/*
+ * 返回给定 sds 分配的内存字节数
+ *
+ * 复杂度
+ *  T = O(1)
+ */
+/* Return the total size of the allocation of the specifed sds string,
+ * including:
+ * 1) The sds header before the pointer.
+ * 2) The string.
+ * 3) The free buffer at the end if any.
+ * 4) The implicit null term.
+ */
+size_t sdsAllocSize(sds s) {
+    struct sdshdr *sh = (void*) (s-(sizeof(struct sdshdr)));
+
+    return sizeof(*sh)+sh->len+sh->free+1;
+}
+
 /* Increment the sds length and decrements the left free space at the
  * end of the string according to 'incr'. Also set the null term
  * in the new end of the string.
