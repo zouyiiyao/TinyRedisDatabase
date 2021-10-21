@@ -269,6 +269,11 @@
 #define AOF_FSYNC_EVERYSEC 2
 #define REDIS_DEFAULT_AOF_FSYNC AOF_FSYNC_EVERYSEC
 
+/* Command propagation flags, see propagate() function */
+#define REDIS_PROPAGATE_NONE 0
+#define REDIS_PROPAGATE_AOF 1
+#define REDIS_PROPAGATE_REPL 2
+
 /* Zip structure related defaults */
 #define REDIS_HASH_MAX_ZIPLIST_ENTRIES 512
 #define REDIS_HASH_MAX_ZIPLIST_VALUE 64
@@ -502,10 +507,13 @@ typedef struct redisDb {
     // TODO: 事务相关
     /* dict* watched_keys; */
 
+    // 驱逐池
     struct evictionPoolEntry* eviction_pool;
 
+    // 数据库id
     int id;           /* Database ID */
 
+    // 统计信息，平均剩余生存时间
     long long avg_ttl;
 
 } redisDb;
@@ -743,7 +751,7 @@ struct redisServer {
     // 是否设置了密码
     /* char* requirepass; */
 
-    // PID文件路径
+    // PID文件路径，当redis服务器以守护进程启动时，将pid写入该文件中
     char* pidfile;
 
     // 架构类型
@@ -779,9 +787,10 @@ struct redisServer {
 
     mode_t unixsocketperm;
 
-    // TCP套接字描述符
+    // TCP监听套接字描述符
     int ipfd[REDIS_BINDADDR_MAX];
 
+    // 监听套接字描述符数量
     int ipfd_count;
 
     int sofd;
@@ -814,7 +823,8 @@ struct redisServer {
     // 网络错误
     char neterr[ANET_ERR_LEN];
 
-    dict* migrate_cached_sockets;
+    // TODO: 集群相关
+    /* dict* migrate_cached_sockets; */
 
     /* RDB/AOF载入信息 */
     /* RDB / AOF loading information */
@@ -914,6 +924,7 @@ struct redisServer {
     // 是否开启SO_KEEPALIVE
     int tcpkeepalive;
 
+    // 是否启用主动过期删除
     int active_expire_enabled;
 
     // 客户端最大查询缓冲区长度
@@ -922,6 +933,7 @@ struct redisServer {
     // 服务器数据库总数目
     int dbnum;
 
+    // redis服务器是否以守护进程方式启动
     int daemonize;
 
     // 客户端输出缓冲区大小限制，每一类客户端有不同的限制
@@ -1317,7 +1329,7 @@ robj* lookupKeyWrite(redisDb* db, robj* key);
 robj* lookupKeyReadOrReply(redisClient* c, robj* key, robj* reply);
 robj* lookupKeyWriteOrReply(redisClient* c, robj* key, robj* reply);
 void dbAdd(redisDb* db, robj* key, robj* val);
-void dbOverWrite(redisDb* db, robj* key, robj* val);
+void dbOverwrite(redisDb* db, robj* key, robj* val);
 void setKey(redisDb* db, robj* key, robj* val);
 int dbExists(redisDb* db, robj* key);
 robj* dbRandomKey(redisDb* db);

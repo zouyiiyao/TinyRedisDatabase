@@ -192,7 +192,7 @@ void incrDecrCommand(redisClient* c, long long incr) {
     value += incr;
     new = createStringObjectFromLongLong(value);
     if (o)
-        dbOverWrite(c->db, c->argv[1], new);
+        dbOverwrite(c->db, c->argv[1], new);
     else
         dbAdd(c->db, c->argv[1], new);
 
@@ -263,7 +263,7 @@ void incrbyfloatCommand(redisClient* c) {
 
     new = createStringObjectFromLongDouble(value);
     if (o)
-        dbOverWrite(c->db, c->argv[1], new);
+        dbOverwrite(c->db, c->argv[1], new);
     else
         dbAdd(c->db, c->argv[1], new);
 

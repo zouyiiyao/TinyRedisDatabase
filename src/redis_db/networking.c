@@ -96,7 +96,7 @@ redisClient* createClient(int fd) {
     // 客户端创建时间和最后一次与服务器交互时间
     c->ctime = c->lastinteraction = server.unixtime;
 
-    // 认证状态
+    // TODO: 认证相关，认证状态
     /* c->authenticated = 0; */
     // TODO: 复制相关，复制状态
     /* c->replstate = REDIS_REPL_NONE; */

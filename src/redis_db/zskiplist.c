@@ -511,7 +511,7 @@ int zslParseRange(robj* min, robj* max, zrangespec* spec) {
             spec->maxex = 1;
         } else {
             spec->max = strtod((char*)max->ptr, &eptr);
-            if (etpr[0] != '\0' || isnan(spec->max)) return REDIS_ERR;
+            if (eptr[0] != '\0' || isnan(spec->max)) return REDIS_ERR;
         }
     }
 

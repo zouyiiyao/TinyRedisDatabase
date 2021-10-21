@@ -219,7 +219,7 @@ robj* dbUnshareStringValue(redisDb* db, robj* key, robj* o) {
         robj* decoded = getDecodedObject(o);
         o = createRawStringObject(decoded->ptr, sdslen(decoded->ptr));
         decrRefCount(decoded);
-        dbOverWrite(db, key, o);
+        dbOverwrite(db, key, o);
     }
     return o;
 }

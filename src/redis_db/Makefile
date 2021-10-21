@@ -4,49 +4,16 @@ CCFLAGS = -Wall -std=c99
 RM = rm
 RMFLAGS = -rf
 
-T_LIST_TEST = t_list_test
-T_LIST_TEST_OBJ = sds.o adlist.o intset.o dict.o zskiplist.o ziplist.o utils.o zmalloc.o object.o redis.o t_list.o t_list_test.o
+REDIS_SERVER = redis_server
+REDIS_SERVER_OBJ = sds.o adlist.o intset.o dict.o zskiplist.o ziplist.o utils.o zmalloc.o object.o t_list.o t_set.o \
+t_hash.o t_zset.o t_string.o db.o ae.o anet.o bio.o networking.o config.o aof.o redis.o
 
-T_SET_TEST = t_set_test
-T_SET_TEST_OBJ = sds.o adlist.o intset.o dict.o zskiplist.o ziplist.o utils.o zmalloc.o object.o redis.o t_set.o t_set_test.o
-
-T_HASH_TEST = t_hash_test
-T_HASH_TEST_OBJ = sds.o adlist.o intset.o dict.o zskiplist.o ziplist.o utils.o zmalloc.o object.o redis.o t_hash.o t_hash_test.o
-
-T_ZSET_TEST = t_zset_test
-T_ZSET_TEST_OBJ = sds.o adlist.o intset.o dict.o zskiplist.o ziplist.o utils.o zmalloc.o object.o redis.o t_zset.o t_zset_test.o
-
-t_list_test: $(T_LIST_TEST_OBJ)
-	$(CC) $(CCFLAGS) -o $(T_LIST_TEST) $(T_LIST_TEST_OBJ)
-
-t_set_test: $(T_SET_TEST_OBJ)
-	$(CC) $(CCFLAGS) -o $(T_SET_TEST) $(T_SET_TEST_OBJ)
-
-t_hash_test: $(T_HASH_TEST_OBJ)
-	$(CC) $(CCFLAGS) -o $(T_HASH_TEST) $(T_HASH_TEST_OBJ)
-
-t_zset_test: $(T_ZSET_TEST_OBJ)
-	$(CC) $(CCFLAGS) -o $(T_ZSET_TEST) $(T_ZSET_TEST_OBJ)
-
-t_list_test.o: t_list_test.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
- intset.h zskiplist.h
-	$(CC) $(CCFLAGS) -c t_list_test.c
-
-t_set_test.o: t_set_test.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
- intset.h zskiplist.h
-	$(CC) $(CCFLAGS) -c t_set_test.c
-
-t_hash_test.o: t_hash_test.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
- intset.h zskiplist.h
-	$(CC) $(CCFLAGS) -c t_hash_test.c
-
-t_zset_test.o: t_zset_test.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
- intset.h zskiplist.h
-	$(CC) $(CCFLAGS) -c t_zset_test.c
+redis_server: $(REDIS_SERVER_OBJ)
+	$(CC) -o $(REDIS_SERVER) $(REDIS_SERVER_OBJ) -lpthread
 
 redis.o: redis.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
  intset.h zskiplist.h redis_obj.h
-	$(CC) $(CCFLAGS) -c redis.c
+	$(CC) -c redis.c
 
 sds.o: sds.c sds.h zmalloc.h
 	$(CC) $(CCFLAGS) -c sds.c
@@ -91,6 +58,36 @@ t_hash.o: t_hash.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h zipl
 t_zset.o: t_zset.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
  intset.h zskiplist.h
 	$(CC) $(CCFLAGS) -c t_zset.c
+
+t_string.o: t_string.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
+ intset.h zskiplist.h
+	$(CC) $(CCFLAGS) -c t_string.c
+
+db.o: db.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
+ intset.h zskiplist.h
+	$(CC) $(CCFLAGS) -c db.c
+
+ae.o: ae_epoll.c ae.c ae.h zmalloc.h config.h
+	$(CC) $(CCFLAGS) -c ae_epoll.c ae.c
+
+anet.o: anet.c anet.h
+	$(CC) -Wall -c anet.c
+
+bio.o: bio.c bio.h redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
+ intset.h zskiplist.h
+	$(CC) -Wall -c bio.c
+
+networking.o: networking.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
+ intset.h zskiplist.h
+	$(CC) -Wall -c networking.c
+
+config.o: config.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
+ intset.h zskiplist.h
+	$(CC) -Wall -c config.c
+
+aof.o: aof.c redis.h zmalloc.h config.h utils.h sds.h dict.h adlist.h ziplist.h \
+ intset.h zskiplist.h
+	$(CC) -Wall -c aof.c
 
 clean:
 	$(RM) $(RMFLAGS) *.o *test
